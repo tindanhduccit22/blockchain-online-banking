@@ -2,179 +2,208 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("SavingCore", function () {
-  async function deploySavingCore() {
-    const [owner, user, feeReceiver] = await ethers.getSigners();
+  let savingCore;
+  let owner;
+  let user;
 
-    const MockUSDC = await ethers.getContractFactory("MockUSDC");
-    const token = await MockUSDC.deploy();
+  const TENOR_DAYS = 90;
+  const APR_BPS = 200;
+  const PENALTY_BPS = 400;
 
-    const VaultManager = await ethers.getContractFactory("VaultManager");
-    const vault = await VaultManager.deploy(
-      await token.getAddress(),
-      feeReceiver.address
+  const MIN_DEPOSIT = 100_000000;
+  const MAX_DEPOSIT = 10_000_000000;
+
+  beforeEach(async function () {
+    [owner, user] = await ethers.getSigners();
+
+    const SavingCore = await ethers.getContractFactory(
+      "SavingCore"
     );
 
-    const SavingCore = await ethers.getContractFactory("SavingCore");
-    const savingCore = await SavingCore.deploy(
-      await token.getAddress(),
-      await vault.getAddress()
-    );
-
-    return {
-      token,
-      vault,
-      savingCore,
-      owner,
-      user,
-      feeReceiver,
-    };
-  }
-
-  it("should initialize with the correct token and vault manager", async function () {
-    const { token, vault, savingCore } = await deploySavingCore();
-
-    expect(await savingCore.token()).to.equal(await token.getAddress());
-    expect(await savingCore.vaultManager()).to.equal(
-      await vault.getAddress()
-    );
+    savingCore = await SavingCore.deploy();
+    await savingCore.waitForDeployment();
   });
 
-  it("should allow the owner to create a saving plan", async function () {
-    const { savingCore } = await deploySavingCore();
+  it("should use the correct personal variant values", async function () {
+    expect(await savingCore.GRACE_PERIOD())
+      .to.equal(2 * 24 * 60 * 60);
 
-    const duration = 30 * 24 * 60 * 60;
-    const aprBps = 500;
-    const penaltyBps = 200;
+    expect(await savingCore.DEFAULT_APR_BPS())
+      .to.equal(200);
 
-    await savingCore.createPlan(duration, aprBps, penaltyBps);
+    expect(await savingCore.DEFAULT_PENALTY_BPS())
+      .to.equal(400);
+
+    expect(await savingCore.DEFAULT_TENOR_DAYS())
+      .to.equal(90);
+  });
+
+  it("should allow owner to create a saving plan", async function () {
+    await savingCore.createPlan(
+      TENOR_DAYS,
+      APR_BPS,
+      MIN_DEPOSIT,
+      MAX_DEPOSIT,
+      PENALTY_BPS
+    );
 
     const plan = await savingCore.getPlan(0);
 
-    expect(plan.duration).to.equal(duration);
-    expect(plan.aprBps).to.equal(aprBps);
-    expect(plan.penaltyBps).to.equal(penaltyBps);
-    expect(plan.active).to.equal(true);
-    expect(await savingCore.nextPlanId()).to.equal(1);
+    expect(plan.tenorDays).to.equal(TENOR_DAYS);
+    expect(plan.aprBps).to.equal(APR_BPS);
+
+    expect(plan.minDeposit)
+      .to.equal(MIN_DEPOSIT);
+
+    expect(plan.maxDeposit)
+      .to.equal(MAX_DEPOSIT);
+
+    expect(plan.earlyWithdrawPenaltyBps)
+      .to.equal(PENALTY_BPS);
+
+    expect(plan.enabled).to.equal(true);
   });
 
-  it("should reject plan creation from a non-owner", async function () {
-    const { savingCore, user } = await deploySavingCore();
-
-    const duration = 30 * 24 * 60 * 60;
-
-    await expect(
-      savingCore.connect(user).createPlan(duration, 500, 200)
-    ).to.be.revertedWithCustomError(
-      savingCore,
-      "OwnableUnauthorizedAccount"
-    );
-  });
-
-  it("should allow the owner to update a saving plan", async function () {
-    const { savingCore } = await deploySavingCore();
-
+  it("should allow zero min and max deposit limits", async function () {
     await savingCore.createPlan(
-      30 * 24 * 60 * 60,
-      500,
-      200
+      TENOR_DAYS,
+      APR_BPS,
+      0,
+      0,
+      PENALTY_BPS
     );
 
-    const newDuration = 90 * 24 * 60 * 60;
-    const newAprBps = 700;
-    const newPenaltyBps = 300;
+    const plan = await savingCore.getPlan(0);
+
+    expect(plan.minDeposit).to.equal(0);
+    expect(plan.maxDeposit).to.equal(0);
+  });
+
+  it("should reject invalid deposit limits", async function () {
+    await expect(
+      savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MAX_DEPOSIT,
+        MIN_DEPOSIT,
+        PENALTY_BPS
+      )
+    ).to.be.revertedWith(
+      "Invalid deposit limits"
+    );
+  });
+
+  it("should reject plan creation from non-owner", async function () {
+    await expect(
+      savingCore.connect(user).createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      )
+    ).to.be.reverted;
+  });
+
+  it("should allow owner to update plan APR", async function () {
+    await savingCore.createPlan(
+      TENOR_DAYS,
+      APR_BPS,
+      MIN_DEPOSIT,
+      MAX_DEPOSIT,
+      PENALTY_BPS
+    );
 
     await savingCore.updatePlan(
       0,
-      newDuration,
-      newAprBps,
-      newPenaltyBps
+      300
     );
 
     const plan = await savingCore.getPlan(0);
 
-    expect(plan.duration).to.equal(newDuration);
-    expect(plan.aprBps).to.equal(newAprBps);
-    expect(plan.penaltyBps).to.equal(newPenaltyBps);
+    expect(plan.aprBps).to.equal(300);
   });
 
-  it("should allow the owner to deactivate and reactivate a plan", async function () {
-    const { savingCore } = await deploySavingCore();
-
+  it("should allow owner to disable a plan", async function () {
     await savingCore.createPlan(
-      30 * 24 * 60 * 60,
-      500,
-      200
+      TENOR_DAYS,
+      APR_BPS,
+      MIN_DEPOSIT,
+      MAX_DEPOSIT,
+      PENALTY_BPS
     );
 
-    await savingCore.setPlanActive(0, false);
+    await savingCore.disablePlan(0);
 
-    let plan = await savingCore.getPlan(0);
-    expect(plan.active).to.equal(false);
+    const plan = await savingCore.getPlan(0);
 
-    await savingCore.setPlanActive(0, true);
-
-    plan = await savingCore.getPlan(0);
-    expect(plan.active).to.equal(true);
+    expect(plan.enabled).to.equal(false);
   });
 
-  it("should reject plan updates from a non-owner", async function () {
-    const { savingCore, user } = await deploySavingCore();
-
+  it("should allow owner to enable a plan", async function () {
     await savingCore.createPlan(
-      30 * 24 * 60 * 60,
-      500,
-      200
+      TENOR_DAYS,
+      APR_BPS,
+      MIN_DEPOSIT,
+      MAX_DEPOSIT,
+      PENALTY_BPS
     );
 
-    await expect(
-      savingCore
-        .connect(user)
-        .updatePlan(0, 60 * 24 * 60 * 60, 600, 250)
-    ).to.be.revertedWithCustomError(
-      savingCore,
-      "OwnableUnauthorizedAccount"
-    );
+    await savingCore.disablePlan(0);
+    await savingCore.enablePlan(0);
+
+    const plan = await savingCore.getPlan(0);
+
+    expect(plan.enabled).to.equal(true);
   });
 
-  it("should reject zero duration", async function () {
-    const { savingCore } = await deploySavingCore();
-
+  it("should reject zero tenor", async function () {
     await expect(
-      savingCore.createPlan(0, 500, 200)
+      savingCore.createPlan(
+        0,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      )
     ).to.be.revertedWith(
-      "Duration must be greater than zero"
+      "Invalid tenor"
     );
   });
 
   it("should reject APR greater than 100 percent", async function () {
-    const { savingCore } = await deploySavingCore();
-
     await expect(
       savingCore.createPlan(
-        30 * 24 * 60 * 60,
+        TENOR_DAYS,
         10001,
-        200
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
       )
-    ).to.be.revertedWith("APR exceeds maximum");
+    ).to.be.revertedWith(
+      "Invalid APR"
+    );
   });
 
   it("should reject penalty greater than 100 percent", async function () {
-    const { savingCore } = await deploySavingCore();
-
     await expect(
       savingCore.createPlan(
-        30 * 24 * 60 * 60,
-        500,
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
         10001
       )
-    ).to.be.revertedWith("Penalty exceeds maximum");
+    ).to.be.revertedWith(
+      "Invalid penalty"
+    );
   });
 
   it("should reject access to a plan that does not exist", async function () {
-    const { savingCore } = await deploySavingCore();
-
     await expect(
-      savingCore.getPlan(0)
-    ).to.be.revertedWith("Plan does not exist");
+      savingCore.getPlan(999)
+    ).to.be.revertedWith(
+      "Plan does not exist"
+    );
   });
 });

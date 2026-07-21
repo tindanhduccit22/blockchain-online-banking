@@ -1,137 +1,150 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract SavingCore is Ownable {
-    uint256 public constant BPS_DENOMINATOR = 10_000;
-
-    IERC20 public immutable token;
-    address public immutable vaultManager;
-
     struct SavingPlan {
-        uint256 duration;
+        uint256 tenorDays;
         uint256 aprBps;
-        uint256 penaltyBps;
-        bool active;
+        uint256 minDeposit;
+        uint256 maxDeposit;
+        uint256 earlyWithdrawPenaltyBps;
+        bool enabled;
     }
+
+    uint256 public constant GRACE_PERIOD = 2 days;
+    uint256 public constant DEFAULT_APR_BPS = 200;
+    uint256 public constant DEFAULT_PENALTY_BPS = 400;
+    uint256 public constant DEFAULT_TENOR_DAYS = 90;
 
     uint256 public nextPlanId;
 
     mapping(uint256 => SavingPlan) private savingPlans;
 
-    event SavingPlanCreated(
+    event PlanCreated(
         uint256 indexed planId,
-        uint256 duration,
-        uint256 aprBps,
-        uint256 penaltyBps
+        uint256 tenorDays,
+        uint256 aprBps
     );
 
-    event SavingPlanUpdated(
+    event PlanUpdated(
         uint256 indexed planId,
-        uint256 duration,
-        uint256 aprBps,
-        uint256 penaltyBps
+        uint256 newAprBps
     );
 
-    event SavingPlanStatusChanged(
+    event PlanStatusChanged(
         uint256 indexed planId,
-        bool active
+        bool enabled
     );
 
-    constructor(
-        address tokenAddress,
-        address vaultManagerAddress
-    ) Ownable(msg.sender) {
-        require(tokenAddress != address(0), "Invalid token address");
-        require(
-            vaultManagerAddress != address(0),
-            "Invalid vault manager"
-        );
-
-        token = IERC20(tokenAddress);
-        vaultManager = vaultManagerAddress;
-    }
+    constructor() Ownable(msg.sender) {}
 
     function createPlan(
-        uint256 duration,
+        uint256 tenorDays,
         uint256 aprBps,
-        uint256 penaltyBps
-    ) external onlyOwner returns (uint256 planId) {
-        _validatePlan(duration, aprBps, penaltyBps);
+        uint256 minDeposit,
+        uint256 maxDeposit,
+        uint256 earlyWithdrawPenaltyBps
+    ) external onlyOwner returns (uint256) {
+        require(tenorDays > 0, "Invalid tenor");
+        require(aprBps <= 10000, "Invalid APR");
+        require(
+            earlyWithdrawPenaltyBps <= 10000,
+            "Invalid penalty"
+        );
 
-        planId = nextPlanId;
-        nextPlanId++;
+        require(
+            maxDeposit == 0 ||
+            minDeposit == 0 ||
+            maxDeposit >= minDeposit,
+            "Invalid deposit limits"
+        );
+
+        uint256 planId = nextPlanId;
 
         savingPlans[planId] = SavingPlan({
-            duration: duration,
+            tenorDays: tenorDays,
             aprBps: aprBps,
-            penaltyBps: penaltyBps,
-            active: true
+            minDeposit: minDeposit,
+            maxDeposit: maxDeposit,
+            earlyWithdrawPenaltyBps: earlyWithdrawPenaltyBps,
+            enabled: true
         });
 
-        emit SavingPlanCreated(
+        nextPlanId++;
+
+        emit PlanCreated(
             planId,
-            duration,
-            aprBps,
-            penaltyBps
+            tenorDays,
+            aprBps
         );
+
+        return planId;
     }
 
     function updatePlan(
         uint256 planId,
-        uint256 duration,
-        uint256 aprBps,
-        uint256 penaltyBps
+        uint256 newAprBps
     ) external onlyOwner {
-        require(planId < nextPlanId, "Plan does not exist");
+        require(
+            planId < nextPlanId,
+            "Plan does not exist"
+        );
 
-        _validatePlan(duration, aprBps, penaltyBps);
+        require(
+            newAprBps <= 10000,
+            "Invalid APR"
+        );
 
-        SavingPlan storage plan = savingPlans[planId];
+        savingPlans[planId].aprBps = newAprBps;
 
-        plan.duration = duration;
-        plan.aprBps = aprBps;
-        plan.penaltyBps = penaltyBps;
-
-        emit SavingPlanUpdated(
+        emit PlanUpdated(
             planId,
-            duration,
-            aprBps,
-            penaltyBps
+            newAprBps
         );
     }
 
-    function setPlanActive(
-        uint256 planId,
-        bool active
+    function enablePlan(
+        uint256 planId
     ) external onlyOwner {
-        require(planId < nextPlanId, "Plan does not exist");
+        require(
+            planId < nextPlanId,
+            "Plan does not exist"
+        );
 
-        savingPlans[planId].active = active;
+        savingPlans[planId].enabled = true;
 
-        emit SavingPlanStatusChanged(planId, active);
+        emit PlanStatusChanged(
+            planId,
+            true
+        );
+    }
+
+    function disablePlan(
+        uint256 planId
+    ) external onlyOwner {
+        require(
+            planId < nextPlanId,
+            "Plan does not exist"
+        );
+
+        savingPlans[planId].enabled = false;
+
+        emit PlanStatusChanged(
+            planId,
+            false
+        );
     }
 
     function getPlan(
         uint256 planId
     ) external view returns (SavingPlan memory) {
-        require(planId < nextPlanId, "Plan does not exist");
+        require(
+            planId < nextPlanId,
+            "Plan does not exist"
+        );
 
         return savingPlans[planId];
-    }
-
-    function _validatePlan(
-        uint256 duration,
-        uint256 aprBps,
-        uint256 penaltyBps
-    ) internal pure {
-        require(duration > 0, "Duration must be greater than zero");
-        require(aprBps <= BPS_DENOMINATOR, "APR exceeds maximum");
-        require(
-            penaltyBps <= BPS_DENOMINATOR,
-            "Penalty exceeds maximum"
-        );
     }
 }
