@@ -3,7 +3,7 @@
 ## 8-Day Roadmap
 
 - [x] Day 1 - Project Setup and MockUSDC
-- [ ] Day 2 - VaultManager
+- [x] Day 2 - VaultManager
 - [ ] Day 3 - Saving Plans and Deposit Architecture
 - [ ] Day 4 - Open Deposit and NFT Certificate
 - [ ] Day 5 - Maturity and Early Withdrawal
@@ -13,6 +13,6 @@
 
 ## Current Progress
 
-Current Day: Day 1
+Current Day: Day 2
 
-Status: In Progress
+Status: Completed
