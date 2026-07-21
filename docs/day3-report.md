@@ -1,54 +1,50 @@
-# Day 3 - Saving Plans and SavingCore Foundation
+# Day 3 - SavingCore and Saving Plan Management
 
 ## Objectives
 
-- Create the SavingCore smart contract foundation.
+- Implement the SavingCore foundation.
 - Implement saving plan management.
-- Add administrative controls for saving plans.
-- Prepare the architecture for deposit functionality.
+- Add minimum and maximum deposit limits.
+- Apply the project personal variant values.
+- Prepare the contract structure for deposit functionality.
 
 ## Completed Work
 
 - Created the SavingCore smart contract.
-- Connected SavingCore with the ERC20 token.
-- Added VaultManager address integration.
-- Created the SavingPlan data structure.
-- Added automatic saving plan IDs.
-- Implemented createPlan().
-- Implemented updatePlan().
-- Implemented setPlanActive().
-- Implemented getPlan().
-- Added basis points (BPS) representation for APR and penalties.
-- Added validation for duration, APR, and penalty values.
-- Added owner-only access control for plan management.
-- Added events for saving plan creation, updates, and status changes.
+- Implemented the SavingPlan structure.
+- Added saving plan creation and management.
+- Added owner-only access control.
+- Added plan enable and disable functionality.
+- Added minimum and maximum deposit limits.
+- Added validation for tenor, APR, penalty, and deposit limits.
+- Added personal variant configuration based on Student ID values A = 0 and B = 2.
 
 ## Saving Plan Structure
 
 Each saving plan contains:
 
-- Duration.
+- Tenor in days.
 - APR in basis points.
+- Minimum deposit.
+- Maximum deposit.
 - Early withdrawal penalty in basis points.
-- Active status.
+- Enabled status.
 
-Basis points are used to represent percentages safely.
+A value of 0 for a deposit limit means that the corresponding limit is not applied.
 
-Examples:
+## Personal Variant
 
-- 10,000 BPS = 100%
-- 500 BPS = 5%
-- 200 BPS = 2%
+Student ID parameters:
 
-## Access Control
+- A = 0
+- B = 2
 
-Only the contract owner can:
+Calculated values:
 
-- Create saving plans.
-- Update saving plans.
-- Activate or deactivate saving plans.
-
-Users cannot modify bank saving plan configurations.
+- Grace Period: 2 days
+- Default APR: 200 BPS (2%)
+- Default Early Withdrawal Penalty: 400 BPS (4%)
+- Default Tenor: 90 days
 
 ## Testing
 
@@ -58,58 +54,43 @@ Command:
 
 Result:
 
-`23 passing`
+`25 passing`
 
-### Test Summary
+The test suite verifies:
 
-- MockUSDC: 3 tests passing.
-- VaultManager: 10 tests passing.
-- SavingCore: 10 tests passing.
-
-SavingCore tests cover:
-
-- Contract initialization.
-- Saving plan creation.
-- Unauthorized plan creation.
-- Saving plan updates.
-- Plan activation and deactivation.
-- Unauthorized plan updates.
-- Zero duration validation.
-- APR validation.
-- Penalty validation.
-- Invalid plan access.
+- MockUSDC functionality.
+- VaultManager functionality.
+- SavingCore saving plan management.
+- Personal variant values.
+- Minimum and maximum deposit limits.
+- Invalid deposit limit validation.
+- Owner access control.
+- APR and penalty validation.
+- Plan enable and disable functionality.
 
 ## Git Progress
 
-### Commit 1
+### Feature Commit
 
 `feat: add saving plan management`
 
-Purpose:
+Implemented the initial SavingCore and saving plan functionality.
 
-- Add the SavingCore foundation.
-- Implement saving plan management.
-- Add access control and validation.
-- Add SavingCore unit tests.
+### Requirement Alignment Fix
 
-### Commit 2
+`fix: align saving plan with project requirements`
 
-`docs: update Day 3 development progress`
-
-Purpose:
-
-- Record completed Day 3 work.
-- Update the development roadmap.
+Added missing minimum and maximum deposit limits and aligned the saving plan structure with the project requirements.
 
 ## Next Steps
 
 Day 4 will focus on:
 
-- Implementing deposit creation.
-- Validating active saving plans.
-- Locking user principal.
-- Snapshotting saving plan terms at deposit creation.
-- Creating NFT deposit certificates.
+- Opening deposits.
+- Validating saving plan deposit limits.
+- Locking user principal in SavingCore.
+- Snapshotting deposit terms.
+- Implementing ERC721 NFT deposit certificates.
 
 ## Blockers
 
