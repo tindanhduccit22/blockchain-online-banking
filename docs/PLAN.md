@@ -2,7 +2,7 @@
 
 ## 8-Day Roadmap
 
-- [ ] Day 1 - Project Setup and MockUSDC
+- [x] Day 1 - Project Setup and MockUSDC
 - [ ] Day 2 - VaultManager
 - [ ] Day 3 - Saving Plans and Deposit Architecture
 - [ ] Day 4 - Open Deposit and NFT Certificate
