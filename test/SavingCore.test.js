@@ -3,6 +3,7 @@ const { ethers } = require("hardhat");
 
 describe("SavingCore", function () {
   let savingCore;
+  let mockUSDC;
   let owner;
   let user;
 
@@ -16,11 +17,18 @@ describe("SavingCore", function () {
   beforeEach(async function () {
     [owner, user] = await ethers.getSigners();
 
-    const SavingCore = await ethers.getContractFactory(
-      "SavingCore"
+    // Deploy MockUSDC first
+    const MockUSDC = await ethers.getContractFactory("MockUSDC");
+    mockUSDC = await MockUSDC.deploy();
+    await mockUSDC.waitForDeployment();
+
+    // Deploy SavingCore with MockUSDC address
+    const SavingCore = await ethers.getContractFactory("SavingCore");
+
+    savingCore = await SavingCore.deploy(
+      await mockUSDC.getAddress()
     );
 
-    savingCore = await SavingCore.deploy();
     await savingCore.waitForDeployment();
   });
 
@@ -205,5 +213,341 @@ describe("SavingCore", function () {
     ).to.be.revertedWith(
       "Plan does not exist"
     );
+  });
+
+  describe("Open Deposit", function () {
+    it("should allow a user to open a deposit", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      // Create saving plan
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      // Give user 1000 MockUSDC
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      // Allow SavingCore to transfer user's USDC
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      // Open deposit
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      // Read created deposit
+      const deposit = await savingCore.getDeposit(0);
+
+      expect(deposit.principal)
+        .to.equal(depositAmount);
+
+      expect(deposit.planId)
+        .to.equal(0);
+
+      expect(deposit.tenorDays)
+        .to.equal(TENOR_DAYS);
+
+      expect(deposit.aprBpsAtOpen)
+        .to.equal(APR_BPS);
+
+      expect(deposit.penaltyBpsAtOpen)
+        .to.equal(PENALTY_BPS);
+
+      // ACTIVE = 0
+      expect(deposit.status)
+        .to.equal(0);
+
+      // Deposit #0 created, next ID should be 1
+      expect(await savingCore.nextDepositId())
+        .to.equal(1);
+
+      // SavingCore should receive user's USDC
+      expect(
+        await mockUSDC.balanceOf(
+          await savingCore.getAddress()
+        )
+      ).to.equal(depositAmount);
+    });
+
+    // TEST 2 - THÊM MỚI
+    it("should reject a deposit below the minimum amount", async function () {
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      const belowMinimum = ethers.parseUnits("99", 6);
+
+      await expect(
+        savingCore
+          .connect(user)
+          .openDeposit(0, belowMinimum)
+      ).to.be.revertedWith("Below minimum deposit");
+    });
+
+
+    // TEST 3 - THÊM MỚI
+    it("should reject a deposit above the maximum amount", async function () {
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      const aboveMaximum = ethers.parseUnits("10001", 6);
+
+      await expect(
+        savingCore
+          .connect(user)
+          .openDeposit(0, aboveMaximum)
+      ).to.be.revertedWith("Above maximum deposit");
+    });
+
+
+    // TEST 4 - THÊM MỚI
+    it("should reject a zero deposit amount", async function () {
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      await expect(
+        savingCore
+          .connect(user)
+          .openDeposit(0, 0)
+      ).to.be.revertedWith(
+        "Amount must be greater than zero"
+      );
+    });
+
+
+    // TEST 5 - THÊM MỚI
+    it("should reject deposits into a disabled plan", async function () {
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      await savingCore.disablePlan(0);
+
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      await expect(
+        savingCore
+          .connect(user)
+          .openDeposit(0, depositAmount)
+      ).to.be.revertedWith("Plan is disabled");
+    });
+
+
+    // TEST 6 - THÊM MỚI
+    it("should reject deposits into a plan that does not exist", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      await expect(
+        savingCore
+          .connect(user)
+          .openDeposit(999, depositAmount)
+      ).to.be.revertedWith("Plan does not exist");
+    });
+    it("should keep the original APR after the plan APR is updated", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      // Create plan with APR = 200 BPS
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      // Give user USDC
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      // Approve SavingCore
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      // Open deposit when APR = 200 BPS
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      // Admin changes plan APR from 200 to 500 BPS
+      await savingCore.updatePlan(
+        0,
+        500
+      );
+
+      const plan = await savingCore.getPlan(0);
+      const deposit = await savingCore.getDeposit(0);
+
+      // Current plan should use new APR
+      expect(plan.aprBps).to.equal(500);
+
+      // Existing deposit must keep original APR
+      expect(deposit.aprBpsAtOpen).to.equal(APR_BPS);
+    });
+    it("should calculate the correct maturity time", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      const deposit = await savingCore.getDeposit(0);
+
+      const expectedDuration =
+        BigInt(TENOR_DAYS * 24 * 60 * 60);
+
+      expect(
+        deposit.maturityAt - deposit.openedAt
+      ).to.equal(expectedDuration);
+    });
+    it("should allow the deposit NFT to be transferred", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      const [, , newOwner] = await ethers.getSigners();
+
+      await savingCore
+        .connect(user)
+        .transferFrom(
+          user.address,
+          newOwner.address,
+          0
+        );
+
+      expect(
+        await savingCore.ownerOf(0)
+      ).to.equal(newOwner.address);
+    });
+    it("should allow the deposit NFT to be transferred", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      await savingCore
+        .connect(user)
+        .openDeposit(0, depositAmount);
+
+      const [, , newOwner] = await ethers.getSigners();
+
+      await savingCore
+        .connect(user)
+        .transferFrom(
+          user.address,
+          newOwner.address,
+          0
+        );
+
+      expect(
+        await savingCore.ownerOf(0)
+      ).to.equal(newOwner.address);
+    });
   });
 });
