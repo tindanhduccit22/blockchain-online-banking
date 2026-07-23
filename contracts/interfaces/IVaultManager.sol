@@ -6,4 +6,9 @@ interface IVaultManager {
         address receiver,
         uint256 amount
     ) external;
+
+    function feeReceiver()
+        external
+        view
+        returns (address);
 }

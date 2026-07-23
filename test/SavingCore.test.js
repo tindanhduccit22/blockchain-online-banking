@@ -502,7 +502,7 @@ describe("SavingCore", function () {
         deposit.maturityAt - deposit.openedAt
       ).to.equal(expectedDuration);
     });
-    
+
     it("should allow the deposit NFT to be transferred", async function () {
       const depositAmount = ethers.parseUnits("1000", 6);
 
@@ -916,6 +916,440 @@ describe("SavingCore", function () {
       ).to.be.revertedWith(
         "Deposit is not active"
       );
+    });
+    describe("Penalty Calculation", function () {
+
+      it("should calculate the correct early withdrawal penalty", async function () {
+        const principal =
+          ethers.parseUnits("1000", 6);
+
+        const penalty =
+          await savingCore.calculatePenalty(
+            principal,
+            PENALTY_BPS
+          );
+
+        const expectedPenalty =
+          ethers.parseUnits("40", 6);
+
+        expect(
+          penalty
+        ).to.equal(
+          expectedPenalty
+        );
+      });
+
+    });
+    describe("Early Withdrawal", function () {
+
+      it("should allow NFT owner to withdraw early with penalty", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        const expectedPenalty =
+          ethers.parseUnits("40", 6);
+
+        const expectedReceived =
+          ethers.parseUnits("960", 6);
+
+        // Create plan: 2% APR, 4% early withdrawal penalty
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give user 1,000 USDC
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // User opens deposit
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // User now has 0 because 1,000 is held by SavingCore
+        expect(
+          await mockUSDC.balanceOf(user.address)
+        ).to.equal(0);
+
+        // Get fee receiver before withdrawal
+        const feeReceiver =
+          await vaultManager.feeReceiver();
+
+        const feeBalanceBefore =
+          await mockUSDC.balanceOf(
+            feeReceiver
+          );
+
+        // Withdraw before maturity
+        await savingCore
+          .connect(user)
+          .withdrawEarly(0);
+
+        // User receives 960 USDC
+        expect(
+          await mockUSDC.balanceOf(user.address)
+        ).to.equal(
+          expectedReceived
+        );
+
+        // Fee receiver receives 40 USDC penalty
+        const feeBalanceAfter =
+          await mockUSDC.balanceOf(
+            feeReceiver
+          );
+
+        expect(
+          feeBalanceAfter - feeBalanceBefore
+        ).to.equal(
+          expectedPenalty
+        );
+
+        // Deposit must be CLOSED
+        const deposit =
+          await savingCore.getDeposit(0);
+
+        expect(
+          deposit.status
+        ).to.equal(1);
+      });
+      it("should preserve the penalty snapshot after the deposit is opened", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        // Create plan with 4% penalty
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open deposit
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        const depositBefore =
+          await savingCore.getDeposit(0);
+
+        expect(
+          depositBefore.penaltyBpsAtOpen
+        ).to.equal(
+          PENALTY_BPS
+        );
+
+        // Admin changes the plan APR later
+        await savingCore.updatePlan(
+          0,
+          500
+        );
+
+        const plan =
+          await savingCore.getPlan(0);
+
+        expect(
+          plan.aprBps
+        ).to.equal(500);
+
+        // Existing deposit keeps its original penalty snapshot
+        const depositAfter =
+          await savingCore.getDeposit(0);
+
+        expect(
+          depositAfter.penaltyBpsAtOpen
+        ).to.equal(
+          PENALTY_BPS
+        );
+      });
+      it("should reject early withdrawal from a non-NFT owner", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        // Create saving plan
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give user funds
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // User opens Deposit #0
+        // => User owns NFT #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Contract owner/admin does NOT own NFT #0
+        await expect(
+          savingCore
+            .connect(owner)
+            .withdrawEarly(0)
+        ).to.be.revertedWith(
+          "Not deposit owner"
+        );
+      });
+      it("should reject early withdrawal after maturity", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        // Create saving plan
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give user funds
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open Deposit #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        const deposit =
+          await savingCore.getDeposit(0);
+
+        // Move blockchain time exactly to maturity
+        await ethers.provider.send(
+          "evm_setNextBlockTimestamp",
+          [Number(deposit.maturityAt)]
+        );
+
+        await ethers.provider.send(
+          "evm_mine",
+          []
+        );
+
+        // Early withdrawal is no longer allowed
+        await expect(
+          savingCore
+            .connect(user)
+            .withdrawEarly(0)
+        ).to.be.revertedWith(
+          "Deposit already matured"
+        );
+      });
+      it("should reject withdrawing early twice", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        // Create saving plan
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give user funds
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open Deposit #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // First early withdrawal succeeds
+        await savingCore
+          .connect(user)
+          .withdrawEarly(0);
+
+        // Deposit should now be CLOSED
+        const deposit =
+          await savingCore.getDeposit(0);
+
+        expect(
+          deposit.status
+        ).to.equal(1);
+
+        // Second withdrawal must fail
+        await expect(
+          savingCore
+            .connect(user)
+            .withdrawEarly(0)
+        ).to.be.revertedWith(
+          "Deposit is not active"
+        );
+      });
+      it("should allow the new NFT owner to withdraw early after transfer", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        const expectedPenalty =
+          ethers.parseUnits("40", 6);
+
+        const expectedReceived =
+          ethers.parseUnits("960", 6);
+
+        const [, , newOwner] =
+          await ethers.getSigners();
+
+        // Create saving plan
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give original user funds
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // User opens Deposit #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Transfer NFT #0 to new owner
+        await savingCore
+          .connect(user)
+          .transferFrom(
+            user.address,
+            newOwner.address,
+            0
+          );
+
+        expect(
+          await savingCore.ownerOf(0)
+        ).to.equal(
+          newOwner.address
+        );
+
+        const feeReceiver =
+          await vaultManager.feeReceiver();
+
+        const feeBalanceBefore =
+          await mockUSDC.balanceOf(
+            feeReceiver
+          );
+
+        // New NFT owner performs early withdrawal
+        await savingCore
+          .connect(newOwner)
+          .withdrawEarly(0);
+
+        // New owner receives principal minus penalty
+        expect(
+          await mockUSDC.balanceOf(
+            newOwner.address
+          )
+        ).to.equal(
+          expectedReceived
+        );
+
+        // Fee receiver gets 4% penalty
+        const feeBalanceAfter =
+          await mockUSDC.balanceOf(
+            feeReceiver
+          );
+
+        expect(
+          feeBalanceAfter - feeBalanceBefore
+        ).to.equal(
+          expectedPenalty
+        );
+
+        // Deposit is CLOSED
+        const deposit =
+          await savingCore.getDeposit(0);
+
+        expect(
+          deposit.status
+        ).to.equal(1);
+      });
     });
   });
 });

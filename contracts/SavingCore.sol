@@ -75,6 +75,14 @@ contract SavingCore is Ownable, ERC721 {
         uint256 interest
     );
 
+    event DepositWithdrawnEarly(
+        uint256 indexed depositId,
+        address indexed receiver,
+        uint256 principal,
+        uint256 penalty,
+        uint256 amountReceived
+    );
+
     constructor(
         address tokenAddress,
         address vaultManagerAddress
@@ -161,6 +169,49 @@ contract SavingCore is Ownable, ERC721 {
         }
 
         emit DepositWithdrawn(depositId, msg.sender, principal, interest);
+    }
+
+    function withdrawEarly(uint256 depositId) external {
+        require(depositId < nextDepositId, "Deposit does not exist");
+
+        Deposit storage deposit = deposits[depositId];
+
+        require(
+            deposit.status == DepositStatus.ACTIVE,
+            "Deposit is not active"
+        );
+
+        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
+
+        require(
+            block.timestamp < deposit.maturityAt,
+            "Deposit already matured"
+        );
+
+        uint256 principal = deposit.principal;
+
+        uint256 penalty = calculatePenalty(principal, deposit.penaltyBpsAtOpen);
+
+        uint256 amountReceived = principal - penalty;
+
+        // Effects before interactions
+        deposit.status = DepositStatus.CLOSED;
+
+        // Return remaining principal to NFT owner
+        token.safeTransfer(msg.sender, amountReceived);
+
+        // Send penalty to fee receiver
+        if (penalty > 0) {
+            token.safeTransfer(vaultManager.feeReceiver(), penalty);
+        }
+
+        emit DepositWithdrawnEarly(
+            depositId,
+            msg.sender,
+            principal,
+            penalty,
+            amountReceived
+        );
     }
     function openDeposit(
         uint256 planId,
@@ -253,5 +304,12 @@ contract SavingCore is Ownable, ERC721 {
         uint256 tenorDays
     ) public pure returns (uint256) {
         return (principal * aprBps * tenorDays) / (10000 * 365);
+    }
+
+    function calculatePenalty(
+        uint256 principal,
+        uint256 penaltyBps
+    ) public pure returns (uint256) {
+        return (principal * penaltyBps) / 10000;
     }
 }
