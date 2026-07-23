@@ -17,21 +17,40 @@ describe("SavingCore", function () {
   beforeEach(async function () {
     [owner, user] = await ethers.getSigners();
 
-    // Deploy MockUSDC first
-    const MockUSDC = await ethers.getContractFactory("MockUSDC");
+    // Deploy MockUSDC
+    const MockUSDC =
+      await ethers.getContractFactory("MockUSDC");
+
     mockUSDC = await MockUSDC.deploy();
     await mockUSDC.waitForDeployment();
 
-    // Deploy SavingCore with MockUSDC address
-    const SavingCore = await ethers.getContractFactory("SavingCore");
+    // Deploy VaultManager
+    const VaultManager =
+      await ethers.getContractFactory("VaultManager");
+
+    vaultManager = await VaultManager.deploy(
+      await mockUSDC.getAddress(),
+      owner.address
+    );
+
+    await vaultManager.waitForDeployment();
+
+    // Deploy SavingCore
+    const SavingCore =
+      await ethers.getContractFactory("SavingCore");
 
     savingCore = await SavingCore.deploy(
-      await mockUSDC.getAddress()
+      await mockUSDC.getAddress(),
+      await vaultManager.getAddress()
     );
 
     await savingCore.waitForDeployment();
-  });
 
+    // Authorize SavingCore to request interest payouts
+    await vaultManager.setSavingCore(
+      await savingCore.getAddress()
+    );
+  });
   it("should use the correct personal variant values", async function () {
     expect(await savingCore.GRACE_PERIOD())
       .to.equal(2 * 24 * 60 * 60);
@@ -213,6 +232,25 @@ describe("SavingCore", function () {
     ).to.be.revertedWith(
       "Plan does not exist"
     );
+  });
+
+  it("should calculate interest correctly", async function () {
+    const principal = ethers.parseUnits("1000", 6);
+
+    const expectedInterest =
+      (principal *
+        BigInt(APR_BPS) *
+        BigInt(TENOR_DAYS)) /
+      (10000n * 365n);
+
+    const interest =
+      await savingCore.calculateInterest(
+        principal,
+        APR_BPS,
+        TENOR_DAYS
+      );
+
+    expect(interest).to.equal(expectedInterest);
   });
 
   describe("Open Deposit", function () {
@@ -464,50 +502,7 @@ describe("SavingCore", function () {
         deposit.maturityAt - deposit.openedAt
       ).to.equal(expectedDuration);
     });
-    it("should allow the deposit NFT to be transferred", async function () {
-      const depositAmount = ethers.parseUnits("1000", 6);
-
-      await savingCore.createPlan(
-        TENOR_DAYS,
-        APR_BPS,
-        MIN_DEPOSIT,
-        MAX_DEPOSIT,
-        PENALTY_BPS
-      );
-
-      await mockUSDC.mint(
-        user.address,
-        depositAmount
-      );
-
-      await mockUSDC
-        .connect(user)
-        .approve(
-          await savingCore.getAddress(),
-          depositAmount
-        );
-
-      await savingCore
-        .connect(user)
-        .openDeposit(
-          0,
-          depositAmount
-        );
-
-      const [, , newOwner] = await ethers.getSigners();
-
-      await savingCore
-        .connect(user)
-        .transferFrom(
-          user.address,
-          newOwner.address,
-          0
-        );
-
-      expect(
-        await savingCore.ownerOf(0)
-      ).to.equal(newOwner.address);
-    });
+    
     it("should allow the deposit NFT to be transferred", async function () {
       const depositAmount = ethers.parseUnits("1000", 6);
 
@@ -548,6 +543,379 @@ describe("SavingCore", function () {
       expect(
         await savingCore.ownerOf(0)
       ).to.equal(newOwner.address);
+    });
+  });
+  describe("Mature Withdrawal", function () {
+    it("should allow the NFT owner to withdraw principal and interest at maturity", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+      const vaultFundAmount = ethers.parseUnits("100", 6);
+
+      // Create saving plan
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      // Give user funds for deposit
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      // Open deposit
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      // Fund VaultManager for interest payments
+      await mockUSDC.mint(
+        owner.address,
+        vaultFundAmount
+      );
+
+      await mockUSDC.approve(
+        await vaultManager.getAddress(),
+        vaultFundAmount
+      );
+
+      await vaultManager.fundVault(
+        vaultFundAmount
+      );
+
+      const deposit =
+        await savingCore.getDeposit(0);
+
+      const expectedInterest =
+        await savingCore.calculateInterest(
+          deposit.principal,
+          deposit.aprBpsAtOpen,
+          deposit.tenorDays
+        );
+
+      // Move blockchain time to maturity
+      await ethers.provider.send(
+        "evm_setNextBlockTimestamp",
+        [Number(deposit.maturityAt)]
+      );
+
+      await ethers.provider.send(
+        "evm_mine",
+        []
+      );
+
+      // User withdraws at maturity
+      await savingCore
+        .connect(user)
+        .withdrawAtMaturity(0);
+
+      // User should receive principal + interest
+      expect(
+        await mockUSDC.balanceOf(user.address)
+      ).to.equal(
+        depositAmount + expectedInterest
+      );
+
+      // Deposit should now be CLOSED
+      const closedDeposit =
+        await savingCore.getDeposit(0);
+
+      expect(
+        closedDeposit.status
+      ).to.equal(1);
+    });
+    it("should reject withdrawal before maturity", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      await expect(
+        savingCore
+          .connect(user)
+          .withdrawAtMaturity(0)
+      ).to.be.revertedWith(
+        "Deposit has not matured"
+      );
+    });
+    it("should reject withdrawal from a non-NFT owner", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      // User opens Deposit #0 and owns NFT #0
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      const deposit =
+        await savingCore.getDeposit(0);
+
+      // Move time to maturity
+      await ethers.provider.send(
+        "evm_setNextBlockTimestamp",
+        [Number(deposit.maturityAt)]
+      );
+
+      await ethers.provider.send(
+        "evm_mine",
+        []
+      );
+
+      // Owner/admin does NOT own NFT #0
+      await expect(
+        savingCore
+          .connect(owner)
+          .withdrawAtMaturity(0)
+      ).to.be.revertedWith(
+        "Not deposit owner"
+      );
+    });
+    it("should allow the new NFT owner to withdraw after transfer", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+      const vaultFundAmount = ethers.parseUnits("100", 6);
+
+      const [, , newOwner] = await ethers.getSigners();
+
+      // Create saving plan
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      // Give user funds
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      // User opens Deposit #0
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      // Transfer NFT #0 from original depositor to new owner
+      await savingCore
+        .connect(user)
+        .transferFrom(
+          user.address,
+          newOwner.address,
+          0
+        );
+
+      expect(
+        await savingCore.ownerOf(0)
+      ).to.equal(newOwner.address);
+
+      // Fund VaultManager for interest
+      await mockUSDC.mint(
+        owner.address,
+        vaultFundAmount
+      );
+
+      await mockUSDC.approve(
+        await vaultManager.getAddress(),
+        vaultFundAmount
+      );
+
+      await vaultManager.fundVault(
+        vaultFundAmount
+      );
+
+      const deposit =
+        await savingCore.getDeposit(0);
+
+      const expectedInterest =
+        await savingCore.calculateInterest(
+          deposit.principal,
+          deposit.aprBpsAtOpen,
+          deposit.tenorDays
+        );
+
+      // Move to maturity
+      await ethers.provider.send(
+        "evm_setNextBlockTimestamp",
+        [Number(deposit.maturityAt)]
+      );
+
+      await ethers.provider.send(
+        "evm_mine",
+        []
+      );
+
+      // NEW NFT owner withdraws
+      await savingCore
+        .connect(newOwner)
+        .withdrawAtMaturity(0);
+
+      // New owner receives principal + interest
+      expect(
+        await mockUSDC.balanceOf(newOwner.address)
+      ).to.equal(
+        depositAmount + expectedInterest
+      );
+
+      const closedDeposit =
+        await savingCore.getDeposit(0);
+
+      expect(
+        closedDeposit.status
+      ).to.equal(1);
+    });
+    it("should reject withdrawing the same deposit twice", async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+      const vaultFundAmount = ethers.parseUnits("100", 6);
+
+      // Create saving plan
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      // Give user funds
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      // Open Deposit #0
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      // Fund VaultManager for interest
+      await mockUSDC.mint(
+        owner.address,
+        vaultFundAmount
+      );
+
+      await mockUSDC.approve(
+        await vaultManager.getAddress(),
+        vaultFundAmount
+      );
+
+      await vaultManager.fundVault(
+        vaultFundAmount
+      );
+
+      const deposit =
+        await savingCore.getDeposit(0);
+
+      // Move to maturity
+      await ethers.provider.send(
+        "evm_setNextBlockTimestamp",
+        [Number(deposit.maturityAt)]
+      );
+
+      await ethers.provider.send(
+        "evm_mine",
+        []
+      );
+
+      // First withdrawal succeeds
+      await savingCore
+        .connect(user)
+        .withdrawAtMaturity(0);
+
+      // Deposit is now CLOSED
+      const closedDeposit =
+        await savingCore.getDeposit(0);
+
+      expect(
+        closedDeposit.status
+      ).to.equal(1);
+
+      // Second withdrawal must fail
+      await expect(
+        savingCore
+          .connect(user)
+          .withdrawAtMaturity(0)
+      ).to.be.revertedWith(
+        "Deposit is not active"
+      );
     });
   });
 });

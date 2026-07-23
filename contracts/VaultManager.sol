@@ -11,6 +11,7 @@ contract VaultManager is Ownable, Pausable {
 
     IERC20 public immutable token;
     address public feeReceiver;
+    address public savingCore;
 
     event VaultFunded(address indexed funder, uint256 amount);
     event VaultWithdrawn(address indexed receiver, uint256 amount);
@@ -18,6 +19,13 @@ contract VaultManager is Ownable, Pausable {
         address indexed oldReceiver,
         address indexed newReceiver
     );
+
+    event SavingCoreUpdated(
+        address indexed oldSavingCore,
+        address indexed newSavingCore
+    );
+
+    event InterestPaid(address indexed receiver, uint256 amount);
 
     constructor(
         address tokenAddress,
@@ -28,6 +36,11 @@ contract VaultManager is Ownable, Pausable {
 
         token = IERC20(tokenAddress);
         feeReceiver = initialFeeReceiver;
+    }
+
+    modifier onlySavingCore() {
+        require(msg.sender == savingCore, "Only SavingCore");
+        _;
     }
 
     function fundVault(uint256 amount) external {
@@ -57,6 +70,34 @@ contract VaultManager is Ownable, Pausable {
         feeReceiver = newFeeReceiver;
 
         emit FeeReceiverUpdated(oldReceiver, newFeeReceiver);
+    }
+
+    function setSavingCore(address newSavingCore) external onlyOwner {
+        require(newSavingCore != address(0), "Invalid SavingCore address");
+
+        address oldSavingCore = savingCore;
+
+        savingCore = newSavingCore;
+
+        emit SavingCoreUpdated(oldSavingCore, newSavingCore);
+    }
+
+    function payoutInterest(
+        address receiver,
+        uint256 amount
+    ) external onlySavingCore whenNotPaused {
+        require(receiver != address(0), "Invalid receiver");
+
+        require(amount > 0, "Amount must be greater than zero");
+
+        require(
+            token.balanceOf(address(this)) >= amount,
+            "Insufficient vault balance"
+        );
+
+        token.safeTransfer(receiver, amount);
+
+        emit InterestPaid(receiver, amount);
     }
 
     function pause() external onlyOwner {

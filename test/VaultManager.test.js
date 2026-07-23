@@ -119,8 +119,100 @@ describe("VaultManager", function () {
 
     const amount = ethers.parseUnits("100", 6);
 
-    await expect(vault.withdrawVault(amount)).to.be.revertedWith(
+    await expect(
+      vault.withdrawVault(amount)
+    ).to.be.revertedWith(
       "Insufficient vault balance"
     );
   });
+
+  it("should allow owner to set SavingCore", async function () {
+    const { vault, user } = await deployVaultManager();
+
+    await vault.setSavingCore(user.address);
+
+    expect(
+      await vault.savingCore()
+    ).to.equal(user.address);
+  });
+
+  it("should reject non-owner from setting SavingCore", async function () {
+    const { vault, user } = await deployVaultManager();
+
+    await expect(
+      vault
+        .connect(user)
+        .setSavingCore(user.address)
+    ).to.be.revertedWithCustomError(
+      vault,
+      "OwnableUnauthorizedAccount"
+    );
+  });
+
+  it("should reject interest payout from unauthorized caller", async function () {
+    const { vault, user } = await deployVaultManager();
+
+    const amount = ethers.parseUnits("100", 6);
+
+    await expect(
+      vault
+        .connect(user)
+        .payoutInterest(
+          user.address,
+          amount
+        )
+    ).to.be.revertedWith(
+      "Only SavingCore"
+    );
+  });
+
+  it("should allow authorized SavingCore to payout interest", async function () {
+    const { token, vault, owner, user } =
+      await deployVaultManager();
+
+    const fundAmount =
+      ethers.parseUnits("1000", 6);
+
+    const interestAmount =
+      ethers.parseUnits("100", 6);
+
+    // Fund the interest vault
+    await token.mint(
+      owner.address,
+      fundAmount
+    );
+
+    await token.approve(
+      await vault.getAddress(),
+      fundAmount
+    );
+
+    await vault.fundVault(
+      fundAmount
+    );
+
+    // Owner acts as authorized SavingCore in this unit test
+    await vault.setSavingCore(
+      owner.address
+    );
+
+    // Authorized caller pays interest
+    await vault.payoutInterest(
+      user.address,
+      interestAmount
+    );
+
+    // User receives interest
+    expect(
+      await token.balanceOf(user.address)
+    ).to.equal(interestAmount);
+
+    // Vault balance decreases
+    expect(
+      await vault.getVaultBalance()
+    ).to.equal(
+      fundAmount - interestAmount
+    );
+  });
+
 });

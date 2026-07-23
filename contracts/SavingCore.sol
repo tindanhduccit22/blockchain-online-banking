@@ -6,6 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
+import "./interfaces/IVaultManager.sol";
+
 contract SavingCore is Ownable, ERC721 {
     using SafeERC20 for IERC20;
     enum DepositStatus {
@@ -40,6 +42,8 @@ contract SavingCore is Ownable, ERC721 {
 
     IERC20 public immutable token;
 
+    IVaultManager public immutable vaultManager;
+
     uint256 public nextPlanId;
     uint256 public nextDepositId;
 
@@ -64,12 +68,26 @@ contract SavingCore is Ownable, ERC721 {
         uint256 maturityAt
     );
 
+    event DepositWithdrawn(
+        uint256 indexed depositId,
+        address indexed receiver,
+        uint256 principal,
+        uint256 interest
+    );
+
     constructor(
-        address tokenAddress
+        address tokenAddress,
+        address vaultManagerAddress
     ) Ownable(msg.sender) ERC721("Saving Deposit Certificate", "SDC") {
         require(tokenAddress != address(0), "Invalid token address");
 
+        require(
+            vaultManagerAddress != address(0),
+            "Invalid VaultManager address"
+        );
+
         token = IERC20(tokenAddress);
+        vaultManager = IVaultManager(vaultManagerAddress);
     }
 
     function createPlan(
@@ -106,6 +124,44 @@ contract SavingCore is Ownable, ERC721 {
         return planId;
     }
 
+    function withdrawAtMaturity(uint256 depositId) external {
+        require(depositId < nextDepositId, "Deposit does not exist");
+
+        Deposit storage deposit = deposits[depositId];
+
+        require(
+            deposit.status == DepositStatus.ACTIVE,
+            "Deposit is not active"
+        );
+
+        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
+
+        require(
+            block.timestamp >= deposit.maturityAt,
+            "Deposit has not matured"
+        );
+
+        uint256 interest = calculateInterest(
+            deposit.principal,
+            deposit.aprBpsAtOpen,
+            deposit.tenorDays
+        );
+
+        uint256 principal = deposit.principal;
+
+        // Effects before external interactions
+        deposit.status = DepositStatus.CLOSED;
+
+        // Return principal from SavingCore
+        token.safeTransfer(msg.sender, principal);
+
+        // Pay interest from VaultManager
+        if (interest > 0) {
+            vaultManager.payoutInterest(msg.sender, interest);
+        }
+
+        emit DepositWithdrawn(depositId, msg.sender, principal, interest);
+    }
     function openDeposit(
         uint256 planId,
         uint256 amount
@@ -190,5 +246,12 @@ contract SavingCore is Ownable, ERC721 {
         require(depositId < nextDepositId, "Deposit does not exist");
 
         return deposits[depositId];
+    }
+    function calculateInterest(
+        uint256 principal,
+        uint256 aprBps,
+        uint256 tenorDays
+    ) public pure returns (uint256) {
+        return (principal * aprBps * tenorDays) / (10000 * 365);
     }
 }
