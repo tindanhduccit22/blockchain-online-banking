@@ -251,6 +251,31 @@ describe("SavingCore", function () {
       );
 
     expect(interest).to.equal(expectedInterest);
+    async function createManualRenewDeposit() {
+      const amount = ethers.parseUnits("500", 6);
+
+      await mockUSDC.mint(user.address, amount);
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          amount
+        );
+
+      const depositId =
+        await savingCore.nextDepositId();
+
+      await savingCore
+        .connect(user)
+        .openDeposit(0, amount);
+
+      return {
+        depositId,
+        amount
+      };
+    }
+
   });
 
   describe("Open Deposit", function () {
@@ -635,6 +660,150 @@ describe("SavingCore", function () {
       expect(
         closedDeposit.status
       ).to.equal(1);
+    });
+    it("should manually renew a matured deposit", async function () {
+      // Create a new saving plan
+      await savingCore.createPlan(
+        90,
+        200,
+        0,
+        0,
+        400
+      );
+
+      const amount =
+        ethers.parseUnits("500", 6);
+
+      // Give user USDC
+      await mockUSDC.mint(
+        user.address,
+        amount
+      );
+
+      // Approve SavingCore
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          amount
+        );
+
+      // Get actual deposit ID
+      const depositId =
+        await savingCore.nextDepositId();
+
+      // Open deposit
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          amount
+        );
+
+      // Fund VaultManager for interest
+      const vaultFund =
+        ethers.parseUnits("1000", 6);
+
+      await mockUSDC.mint(
+        owner.address,
+        vaultFund
+      );
+
+      await mockUSDC.approve(
+        await vaultManager.getAddress(),
+        vaultFund
+      );
+
+      await vaultManager.fundVault(
+        vaultFund
+      );
+
+      // Read original deposit
+      const oldDeposit =
+        await savingCore.getDeposit(
+          depositId
+        );
+
+      const expectedInterest =
+        await savingCore.calculateInterest(
+          oldDeposit.principal,
+          oldDeposit.aprBpsAtOpen,
+          oldDeposit.tenorDays
+        );
+
+      // Move blockchain past maturity
+      await ethers.provider.send(
+        "evm_increaseTime",
+        [
+          Number(oldDeposit.tenorDays) *
+          24 * 60 * 60 +
+          1
+        ]
+      );
+
+      await ethers.provider.send(
+        "evm_mine",
+        []
+      );
+
+      // ID that the new deposit should receive
+      const newDepositId =
+        await savingCore.nextDepositId();
+
+      // Manual Renew
+      await savingCore
+        .connect(user)
+        .renewDeposit(
+          depositId,
+          0
+        );
+
+      // Read old and new deposits
+      const renewedOldDeposit =
+        await savingCore.getDeposit(
+          depositId
+        );
+
+      const newDeposit =
+        await savingCore.getDeposit(
+          newDepositId
+        );
+
+      // Old deposit -> MANUAL_RENEWED = 2
+      expect(
+        renewedOldDeposit.status
+      ).to.equal(2n);
+
+      // Auto Renew should be OFF
+      expect(
+        renewedOldDeposit.autoRenew
+      ).to.equal(false);
+
+      // New principal = old principal + interest
+      expect(
+        newDeposit.principal
+      ).to.equal(
+        amount + expectedInterest
+      );
+
+      // New deposit -> ACTIVE = 0
+      expect(
+        newDeposit.status
+      ).to.equal(0n);
+
+      // New NFT belongs to user
+      expect(
+        await savingCore.ownerOf(
+          newDepositId
+        )
+      ).to.equal(user.address);
+
+      // A new deposit was actually created
+      expect(
+        await savingCore.nextDepositId()
+      ).to.equal(
+        newDepositId + 1n
+      );
     });
     it("should reject withdrawal before maturity", async function () {
       const depositAmount = ethers.parseUnits("1000", 6);
@@ -2597,6 +2766,130 @@ describe("SavingCore", function () {
         });
 
       });
+    });
+  });
+  describe("Pause / Unpause", function () {
+    it("should block active deposit operations when paused", async function () {
+      await savingCore.createPlan(
+        90,   // tenorDays
+        200,  // APR = 2%
+        ethers.parseUnits("100", 6),
+        ethers.parseUnits("10000", 6),
+        400   // penalty = 4%
+      );
+      const amount = ethers.parseUnits("500", 6);
+
+      // Mint USDC cho user
+      await mockUSDC.mint(
+        user.address,
+        amount
+      );
+
+      // Approve SavingCore
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          amount
+        );
+
+      // Mở Deposit #0 trước khi pause
+      await savingCore
+        .connect(user)
+        .openDeposit(0, amount);
+
+      // Pause hệ thống
+      await savingCore.pause();
+
+      // 1. setAutoRenew phải bị chặn
+      await expect(
+        savingCore
+          .connect(user)
+          .setAutoRenew(0, true)
+      ).to.be.reverted;
+
+      // 2. Early Withdraw phải bị chặn
+      await expect(
+        savingCore
+          .connect(user)
+          .withdrawEarly(0)
+      ).to.be.reverted;
+
+      // 3. Withdraw at Maturity cũng phải bị chặn
+      await expect(
+        savingCore
+          .connect(user)
+          .withdrawAtMaturity(0)
+      ).to.be.reverted;
+
+      // 4. Manual Renew phải bị chặn
+      await expect(
+        savingCore
+          .connect(user)
+          .renewDeposit(0, 0)
+      ).to.be.reverted;
+
+      // 5. Process Auto Renew phải bị chặn
+      await expect(
+        savingCore.processAutoRenew(0)
+      ).to.be.reverted;
+
+      // Unpause để xác nhận hệ thống hoạt động lại
+      await savingCore.unpause();
+
+      expect(
+        await savingCore.paused()
+      ).to.equal(false);
+    });
+    it("should allow only owner to pause and unpause", async function () {
+      await savingCore.pause();
+
+      expect(
+        await savingCore.paused()
+      ).to.equal(true);
+
+      await savingCore.unpause();
+
+      expect(
+        await savingCore.paused()
+      ).to.equal(false);
+
+      await expect(
+        savingCore.connect(user).pause()
+      ).to.be.reverted;
+    });
+
+    it("should block deposit operations when paused", async function () {
+      await savingCore.createPlan(
+        90,
+        200,
+        0,
+        0,
+        400
+      );
+
+      const amount =
+        ethers.parseUnits("500", 6);
+
+      await mockUSDC.mint(
+        user.address,
+        amount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          amount
+        );
+
+      await savingCore.pause();
+
+      await expect(
+        savingCore
+          .connect(user)
+          .openDeposit(0, amount)
+      ).to.be.reverted;
     });
   });
 });

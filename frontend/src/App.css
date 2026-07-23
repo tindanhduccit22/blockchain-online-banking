@@ -1,0 +1,457 @@
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  width: 100%;
+  min-height: 100vh;
+
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+
+  padding: 50px 20px;
+
+  background: #f4f7fb;
+
+  font-family: Arial, sans-serif;
+
+  color: #1f2937;
+}
+
+/* =========================
+   MAIN CARD
+========================= */
+
+.card {
+  width: 100%;
+  max-width: 560px;
+
+  padding: 40px;
+
+  background: #ffffff;
+
+  border-radius: 16px;
+
+  box-shadow:
+    0 10px 35px
+    rgba(0, 0, 0, 0.1);
+
+  text-align: center;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+.header {
+  margin-bottom: 28px;
+}
+
+.header h1 {
+  margin: 0 0 8px;
+
+  color: #111827;
+
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+
+  color: #6b7280;
+
+  font-size: 16px;
+}
+
+/* =========================
+   WALLET
+========================= */
+
+.wallet-box {
+  margin-bottom: 20px;
+
+  padding: 18px 20px;
+
+  background: #f7f8fa;
+
+  border-radius: 10px;
+
+  overflow-wrap: anywhere;
+}
+
+.wallet-box p {
+  margin: 5px 0;
+
+  color: #6b7280;
+}
+
+.wallet-box strong {
+  color: #374151;
+}
+
+/* =========================
+   BALANCE
+========================= */
+
+.balance-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 20px;
+
+  margin-bottom: 20px;
+
+  padding: 16px 20px;
+
+  background: #eef2f7;
+
+  border-radius: 10px;
+
+  text-align: left;
+}
+
+.balance-box span {
+  color: #4b5563;
+}
+
+.balance-box strong {
+  color: #1f2937;
+
+  font-size: 18px;
+
+  text-align: right;
+}
+
+/* =========================
+   BUTTONS
+========================= */
+
+button {
+  padding: 12px 24px;
+
+  border: none;
+  border-radius: 8px;
+
+  cursor: pointer;
+
+  font-size: 15px;
+  font-weight: 500;
+
+  background: #1f2937;
+
+  color: #ffffff;
+
+  transition:
+    opacity 0.2s,
+    transform 0.1s;
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.55;
+
+  cursor: not-allowed;
+}
+
+.connect-button {
+  margin-bottom: 5px;
+}
+
+/* =========================
+   COMMON CARD STYLE
+========================= */
+
+.plan-card,
+.deposit-card,
+.my-deposit-card {
+  margin-top: 25px;
+
+  padding: 24px;
+
+  background: #f7f8fa;
+
+  border-radius: 12px;
+
+  text-align: left;
+}
+
+.plan-card h2,
+.deposit-card h2 {
+  margin-top: 0;
+  margin-bottom: 22px;
+
+  color: #1f2937;
+
+  text-align: center;
+
+  font-size: 21px;
+}
+
+/* =========================
+   SAVING PLAN
+========================= */
+
+.plan-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 20px;
+
+  padding: 12px 0;
+
+  border-bottom:
+    1px solid #d9dde3;
+}
+
+.plan-row:last-child {
+  border-bottom: none;
+}
+
+.plan-row span {
+  color: #4b5563;
+}
+
+.plan-row strong {
+  color: #374151;
+
+  text-align: right;
+}
+
+/* =========================
+   OPEN DEPOSIT
+========================= */
+
+.deposit-card label {
+  display: block;
+
+  margin-bottom: 8px;
+
+  color: #4b5563;
+
+  font-weight: 500;
+}
+
+.deposit-card input {
+  width: 100%;
+
+  padding: 13px 14px;
+
+  border:
+    1px solid #cbd5e1;
+
+  border-radius: 8px;
+
+  background: #ffffff;
+
+  color: #111827;
+
+  font-size: 16px;
+
+  outline: none;
+}
+
+.deposit-card input:focus {
+  border-color: #64748b;
+}
+
+.deposit-actions {
+  display: flex;
+
+  gap: 10px;
+
+  margin-top: 16px;
+}
+
+.deposit-actions button {
+  flex: 1;
+}
+
+.transaction-status {
+  margin:
+    16px 0 0;
+
+  color: #4b5563;
+
+  text-align: center;
+
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* =========================
+   MY DEPOSIT
+========================= */
+
+.deposit-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+
+  gap: 20px;
+
+  margin-bottom: 20px;
+}
+
+.deposit-title h2 {
+  margin:
+    0 0 5px;
+
+  color: #1f2937;
+
+  font-size: 21px;
+}
+
+.deposit-title span {
+  color: #6b7280;
+
+  font-size: 13px;
+}
+
+/* =========================
+   STATUS
+========================= */
+
+.status-active {
+  flex-shrink: 0;
+
+  padding:
+    6px 12px;
+
+  background: #e7f7ed;
+
+  border-radius: 20px;
+
+  color: #198754;
+
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.status-closed {
+  flex-shrink: 0;
+
+  padding:
+    6px 12px;
+
+  background: #eeeeee;
+
+  border-radius: 20px;
+
+  color: #666666;
+
+  font-size: 12px;
+  font-weight: bold;
+}
+
+/* =========================
+   DEPOSIT INFORMATION
+========================= */
+
+.deposit-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 20px;
+
+  padding: 11px 0;
+
+  border-bottom:
+    1px solid #d9dde3;
+}
+
+.deposit-info-row span {
+  color: #4b5563;
+}
+
+.deposit-info-row strong {
+  color: #374151;
+
+  text-align: right;
+
+  overflow-wrap: anywhere;
+}
+
+.deposit-info-row:last-of-type {
+  border-bottom: none;
+}
+
+/* =========================
+   DEPOSIT BUTTONS
+========================= */
+
+.deposit-buttons {
+  display: flex;
+
+  gap: 10px;
+
+  margin-top: 20px;
+}
+
+.deposit-buttons button {
+  flex: 1;
+}
+
+.withdraw-button {
+  background: #9b3434;
+}
+
+.withdraw-button:hover:not(:disabled) {
+  background: #7f2929;
+
+  opacity: 1;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width: 600px) {
+  .app {
+    padding:
+      20px 12px;
+  }
+
+  .card {
+    padding:
+      25px 18px;
+  }
+
+  .header h1 {
+    font-size: 26px;
+  }
+
+  .deposit-actions,
+  .deposit-buttons {
+    flex-direction: column;
+  }
+
+  .deposit-title {
+    flex-direction: column;
+  }
+
+  .plan-row,
+  .deposit-info-row {
+    gap: 10px;
+  }
+}

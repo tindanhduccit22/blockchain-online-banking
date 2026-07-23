@@ -5,15 +5,17 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./interfaces/IVaultManager.sol";
 
-contract SavingCore is Ownable, ERC721 {
+contract SavingCore is ERC721, Ownable, Pausable {
     using SafeERC20 for IERC20;
 
     enum DepositStatus {
         ACTIVE,
-        CLOSED
+        WITHDRAWN,
+        MANUAL_RENEWED,
+        AUTO_RENEWED
     }
 
     struct SavingPlan {
@@ -67,9 +69,16 @@ contract SavingCore is Ownable, ERC721 {
         address indexed depositor,
         uint256 indexed planId,
         uint256 principal,
-        uint256 maturityAt
+        uint256 maturityAt,
+        uint256 aprBpsAtOpen
     );
-
+    event Withdrawn(
+        uint256 indexed depositId,
+        address indexed owner,
+        uint256 principal,
+        uint256 interest,
+        bool isEarly
+    );
     event DepositWithdrawn(
         uint256 indexed depositId,
         address indexed receiver,
@@ -95,6 +104,22 @@ contract SavingCore is Ownable, ERC721 {
         uint256 newPrincipal
     );
 
+    event DepositManuallyRenewed(
+        uint256 indexed oldDepositId,
+        uint256 indexed newDepositId,
+        address indexed owner,
+        uint256 newPlanId,
+        uint256 oldPrincipal,
+        uint256 interestAdded,
+        uint256 newPrincipal
+    );
+    event Renewed(
+        uint256 indexed oldDepositId,
+        uint256 indexed newDepositId,
+        uint256 newPrincipal,
+        uint256 newPlanId
+    );
+
     constructor(
         address tokenAddress,
         address vaultManagerAddress
@@ -114,6 +139,13 @@ contract SavingCore is Ownable, ERC721 {
     // ==========================================
     // SAVING PLAN MANAGEMENT
     // ==========================================
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     function createPlan(
         uint256 tenorDays,
@@ -184,7 +216,7 @@ contract SavingCore is Ownable, ERC721 {
     function openDeposit(
         uint256 planId,
         uint256 amount
-    ) external returns (uint256) {
+    ) external whenNotPaused returns (uint256) {
         require(planId < nextPlanId, "Plan does not exist");
 
         SavingPlan memory plan = savingPlans[planId];
@@ -226,7 +258,14 @@ contract SavingCore is Ownable, ERC721 {
 
         _safeMint(msg.sender, depositId);
 
-        emit DepositOpened(depositId, msg.sender, planId, amount, maturityAt);
+        emit DepositOpened(
+            depositId,
+            msg.sender,
+            planId,
+            amount,
+            maturityAt,
+            plan.aprBps
+        );
 
         return depositId;
     }
@@ -235,7 +274,10 @@ contract SavingCore is Ownable, ERC721 {
     // AUTO RENEW CONFIGURATION
     // ==========================================
 
-    function setAutoRenew(uint256 depositId, bool enabled) external {
+    function setAutoRenew(
+        uint256 depositId,
+        bool enabled
+    ) external whenNotPaused {
         require(depositId < nextDepositId, "Deposit does not exist");
 
         Deposit storage deposit = deposits[depositId];
@@ -257,7 +299,7 @@ contract SavingCore is Ownable, ERC721 {
         emit AutoRenewUpdated(depositId, enabled);
     }
 
-    function processAutoRenew(uint256 depositId) external {
+    function processAutoRenew(uint256 depositId) external whenNotPaused {
         require(depositId < nextDepositId, "Deposit does not exist");
 
         Deposit storage deposit = deposits[depositId];
@@ -313,11 +355,116 @@ contract SavingCore is Ownable, ERC721 {
         );
     }
 
+    function renewDeposit(
+        uint256 depositId,
+        uint256 newPlanId
+    ) external whenNotPaused returns (uint256) {
+        require(depositId < nextDepositId, "Deposit does not exist");
+
+        require(newPlanId < nextPlanId, "Plan does not exist");
+
+        Deposit storage oldDeposit = deposits[depositId];
+
+        require(
+            oldDeposit.status == DepositStatus.ACTIVE,
+            "Deposit is not active"
+        );
+
+        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
+
+        require(
+            block.timestamp >= oldDeposit.maturityAt,
+            "Deposit has not matured"
+        );
+
+        SavingPlan memory newPlan = savingPlans[newPlanId];
+
+        require(newPlan.enabled, "Plan is disabled");
+
+        uint256 interest = calculateInterest(
+            oldDeposit.principal,
+            oldDeposit.aprBpsAtOpen,
+            oldDeposit.tenorDays
+        );
+
+        uint256 oldPrincipal = oldDeposit.principal;
+
+        uint256 newPrincipal = oldPrincipal + interest;
+
+        if (newPlan.minDeposit > 0) {
+            require(
+                newPrincipal >= newPlan.minDeposit,
+                "Below minimum deposit"
+            );
+        }
+
+        if (newPlan.maxDeposit > 0) {
+            require(
+                newPrincipal <= newPlan.maxDeposit,
+                "Above maximum deposit"
+            );
+        }
+
+        // Interest must come from VaultManager.
+        // Principal is already held by SavingCore.
+        if (interest > 0) {
+            vaultManager.payoutInterest(address(this), interest);
+        }
+
+        // Close the old deposit as manually renewed.
+        oldDeposit.status = DepositStatus.MANUAL_RENEWED;
+
+        oldDeposit.autoRenew = false;
+
+        uint256 newDepositId = nextDepositId;
+
+        uint256 openedAt = block.timestamp;
+
+        uint256 maturityAt = openedAt + (newPlan.tenorDays * 1 days);
+
+        deposits[newDepositId] = Deposit({
+            principal: newPrincipal,
+            planId: newPlanId,
+            openedAt: openedAt,
+            maturityAt: maturityAt,
+            tenorDays: newPlan.tenorDays,
+            aprBpsAtOpen: newPlan.aprBps,
+            penaltyBpsAtOpen: newPlan.earlyWithdrawPenaltyBps,
+            status: DepositStatus.ACTIVE,
+            autoRenew: false
+        });
+
+        nextDepositId++;
+
+        _safeMint(msg.sender, newDepositId);
+
+        emit DepositManuallyRenewed(
+            depositId,
+            newDepositId,
+            msg.sender,
+            newPlanId,
+            oldPrincipal,
+            interest,
+            newPrincipal
+        );
+
+        emit DepositOpened(
+            newDepositId,
+            msg.sender,
+            newPlanId,
+            newPrincipal,
+            maturityAt,
+            newPlan.aprBps
+        );
+
+        return newDepositId;
+    }
+
     // ==========================================
     // MATURE WITHDRAWAL
     // ==========================================
 
-    function withdrawAtMaturity(uint256 depositId) external {
+    function withdrawAtMaturity(uint256 depositId) external whenNotPaused {
         require(depositId < nextDepositId, "Deposit does not exist");
 
         Deposit storage deposit = deposits[depositId];
@@ -343,7 +490,7 @@ contract SavingCore is Ownable, ERC721 {
         uint256 principal = deposit.principal;
 
         // Effects before interactions
-        deposit.status = DepositStatus.CLOSED;
+        deposit.status = DepositStatus.WITHDRAWN;
 
         // Principal comes from SavingCore
         token.safeTransfer(msg.sender, principal);
@@ -360,7 +507,7 @@ contract SavingCore is Ownable, ERC721 {
     // EARLY WITHDRAWAL
     // ==========================================
 
-    function withdrawEarly(uint256 depositId) external {
+    function withdrawEarly(uint256 depositId) external whenNotPaused {
         require(depositId < nextDepositId, "Deposit does not exist");
 
         Deposit storage deposit = deposits[depositId];
@@ -384,7 +531,7 @@ contract SavingCore is Ownable, ERC721 {
         uint256 amountReceived = principal - penalty;
 
         // Effects before interactions
-        deposit.status = DepositStatus.CLOSED;
+        deposit.status = DepositStatus.WITHDRAWN;
 
         // Principal minus penalty
         token.safeTransfer(msg.sender, amountReceived);
@@ -401,6 +548,7 @@ contract SavingCore is Ownable, ERC721 {
             penalty,
             amountReceived
         );
+        emit Withdrawn(depositId, msg.sender, principal, 0, true);
     }
 
     // ==========================================
