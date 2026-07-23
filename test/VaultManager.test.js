@@ -213,6 +213,225 @@ describe("VaultManager", function () {
     ).to.equal(
       fundAmount - interestAmount
     );
+    describe("VaultManager Edge Cases", function () {
+
+      it("should reject deployment with zero token address", async function () {
+        const [, , feeReceiver] =
+          await ethers.getSigners();
+
+        const VaultManager =
+          await ethers.getContractFactory(
+            "VaultManager"
+          );
+
+        await expect(
+          VaultManager.deploy(
+            ethers.ZeroAddress,
+            feeReceiver.address
+          )
+        ).to.be.revertedWith(
+          "Invalid token address"
+        );
+      });
+
+
+      it("should reject deployment with zero fee receiver", async function () {
+        const MockUSDC =
+          await ethers.getContractFactory(
+            "MockUSDC"
+          );
+
+        const token =
+          await MockUSDC.deploy();
+
+        const VaultManager =
+          await ethers.getContractFactory(
+            "VaultManager"
+          );
+
+        await expect(
+          VaultManager.deploy(
+            await token.getAddress(),
+            ethers.ZeroAddress
+          )
+        ).to.be.revertedWith(
+          "Invalid fee receiver"
+        );
+      });
+
+
+      it("should reject zero amount when withdrawing from vault", async function () {
+        const { vault } =
+          await deployVaultManager();
+
+        await expect(
+          vault.withdrawVault(0)
+        ).to.be.revertedWith(
+          "Amount must be greater than zero"
+        );
+      });
+
+
+      it("should reject zero SavingCore address", async function () {
+        const { vault } =
+          await deployVaultManager();
+
+        await expect(
+          vault.setSavingCore(
+            ethers.ZeroAddress
+          )
+        ).to.be.revertedWith(
+          "Invalid SavingCore address"
+        );
+      });
+
+
+      it("should reject payout interest while paused", async function () {
+        const {
+          token,
+          vault,
+          owner,
+          user
+        } = await deployVaultManager();
+
+        const amount =
+          ethers.parseUnits("100", 6);
+
+        // Fund VaultManager
+        await token.mint(
+          owner.address,
+          amount
+        );
+
+        await token.approve(
+          await vault.getAddress(),
+          amount
+        );
+
+        await vault.fundVault(
+          amount
+        );
+
+        // Owner acts as authorized SavingCore
+        await vault.setSavingCore(
+          owner.address
+        );
+
+        // Pause contract
+        await vault.pause();
+
+        // Even authorized SavingCore
+        // cannot payout while paused
+        await expect(
+          vault.payoutInterest(
+            user.address,
+            amount
+          )
+        ).to.be.reverted;
+      });
+      it("should reject payout interest to zero address", async function () {
+        const { vault, user } =
+          await deployVaultManager();
+
+        // Authorize user as SavingCore
+        await vault.setSavingCore(
+          user.address
+        );
+
+        await expect(
+          vault
+            .connect(user)
+            .payoutInterest(
+              ethers.ZeroAddress,
+              100
+            )
+        ).to.be.revertedWith(
+          "Invalid receiver"
+        );
+      });
+
+
+      it("should reject zero interest payout amount", async function () {
+        const { vault, user } =
+          await deployVaultManager();
+
+        // Authorize user as SavingCore
+        await vault.setSavingCore(
+          user.address
+        );
+
+        await expect(
+          vault
+            .connect(user)
+            .payoutInterest(
+              user.address,
+              0
+            )
+        ).to.be.revertedWith(
+          "Amount must be greater than zero"
+        );
+      });
+
+
+      it("should reject interest payout greater than vault balance", async function () {
+        const { vault, user } =
+          await deployVaultManager();
+
+        // Authorize user as SavingCore
+        await vault.setSavingCore(
+          user.address
+        );
+
+        const amount =
+          ethers.parseUnits("100", 6);
+
+        // Vault has 0 USDC
+        await expect(
+          vault
+            .connect(user)
+            .payoutInterest(
+              user.address,
+              amount
+            )
+        ).to.be.revertedWith(
+          "Insufficient vault balance"
+        );
+      });
+
+
+      it("should reject pause from a non-owner", async function () {
+        const { vault, user } =
+          await deployVaultManager();
+
+        await expect(
+          vault
+            .connect(user)
+            .pause()
+        ).to.be.revertedWithCustomError(
+          vault,
+          "OwnableUnauthorizedAccount"
+        );
+      });
+
+
+      it("should reject unpause from a non-owner", async function () {
+        const { vault, user } =
+          await deployVaultManager();
+
+        // Owner pauses first
+        await vault.pause();
+
+        // Non-owner attempts to unpause
+        await expect(
+          vault
+            .connect(user)
+            .unpause()
+        ).to.be.revertedWithCustomError(
+          vault,
+          "OwnableUnauthorizedAccount"
+        );
+      });
+    });
   });
 
 });

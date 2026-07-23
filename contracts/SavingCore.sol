@@ -10,6 +10,7 @@ import "./interfaces/IVaultManager.sol";
 
 contract SavingCore is Ownable, ERC721 {
     using SafeERC20 for IERC20;
+
     enum DepositStatus {
         ACTIVE,
         CLOSED
@@ -33,15 +34,16 @@ contract SavingCore is Ownable, ERC721 {
         uint256 aprBpsAtOpen;
         uint256 penaltyBpsAtOpen;
         DepositStatus status;
+        bool autoRenew;
     }
 
+    // Personal variant: A = 0, B = 2
     uint256 public constant GRACE_PERIOD = 2 days;
     uint256 public constant DEFAULT_APR_BPS = 200;
     uint256 public constant DEFAULT_PENALTY_BPS = 400;
     uint256 public constant DEFAULT_TENOR_DAYS = 90;
 
     IERC20 public immutable token;
-
     IVaultManager public immutable vaultManager;
 
     uint256 public nextPlanId;
@@ -83,6 +85,16 @@ contract SavingCore is Ownable, ERC721 {
         uint256 amountReceived
     );
 
+    event AutoRenewUpdated(uint256 indexed depositId, bool enabled);
+
+    event DepositRenewed(
+        uint256 indexed depositId,
+        uint256 oldMaturityAt,
+        uint256 newMaturityAt,
+        uint256 interestAdded,
+        uint256 newPrincipal
+    );
+
     constructor(
         address tokenAddress,
         address vaultManagerAddress
@@ -95,8 +107,13 @@ contract SavingCore is Ownable, ERC721 {
         );
 
         token = IERC20(tokenAddress);
+
         vaultManager = IVaultManager(vaultManagerAddress);
     }
+
+    // ==========================================
+    // SAVING PLAN MANAGEMENT
+    // ==========================================
 
     function createPlan(
         uint256 tenorDays,
@@ -106,7 +123,9 @@ contract SavingCore is Ownable, ERC721 {
         uint256 earlyWithdrawPenaltyBps
     ) external onlyOwner returns (uint256) {
         require(tenorDays > 0, "Invalid tenor");
+
         require(aprBps <= 10000, "Invalid APR");
+
         require(earlyWithdrawPenaltyBps <= 10000, "Invalid penalty");
 
         require(
@@ -130,133 +149,6 @@ contract SavingCore is Ownable, ERC721 {
         emit PlanCreated(planId, tenorDays, aprBps);
 
         return planId;
-    }
-
-    function withdrawAtMaturity(uint256 depositId) external {
-        require(depositId < nextDepositId, "Deposit does not exist");
-
-        Deposit storage deposit = deposits[depositId];
-
-        require(
-            deposit.status == DepositStatus.ACTIVE,
-            "Deposit is not active"
-        );
-
-        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
-
-        require(
-            block.timestamp >= deposit.maturityAt,
-            "Deposit has not matured"
-        );
-
-        uint256 interest = calculateInterest(
-            deposit.principal,
-            deposit.aprBpsAtOpen,
-            deposit.tenorDays
-        );
-
-        uint256 principal = deposit.principal;
-
-        // Effects before external interactions
-        deposit.status = DepositStatus.CLOSED;
-
-        // Return principal from SavingCore
-        token.safeTransfer(msg.sender, principal);
-
-        // Pay interest from VaultManager
-        if (interest > 0) {
-            vaultManager.payoutInterest(msg.sender, interest);
-        }
-
-        emit DepositWithdrawn(depositId, msg.sender, principal, interest);
-    }
-
-    function withdrawEarly(uint256 depositId) external {
-        require(depositId < nextDepositId, "Deposit does not exist");
-
-        Deposit storage deposit = deposits[depositId];
-
-        require(
-            deposit.status == DepositStatus.ACTIVE,
-            "Deposit is not active"
-        );
-
-        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
-
-        require(
-            block.timestamp < deposit.maturityAt,
-            "Deposit already matured"
-        );
-
-        uint256 principal = deposit.principal;
-
-        uint256 penalty = calculatePenalty(principal, deposit.penaltyBpsAtOpen);
-
-        uint256 amountReceived = principal - penalty;
-
-        // Effects before interactions
-        deposit.status = DepositStatus.CLOSED;
-
-        // Return remaining principal to NFT owner
-        token.safeTransfer(msg.sender, amountReceived);
-
-        // Send penalty to fee receiver
-        if (penalty > 0) {
-            token.safeTransfer(vaultManager.feeReceiver(), penalty);
-        }
-
-        emit DepositWithdrawnEarly(
-            depositId,
-            msg.sender,
-            principal,
-            penalty,
-            amountReceived
-        );
-    }
-    function openDeposit(
-        uint256 planId,
-        uint256 amount
-    ) external returns (uint256) {
-        require(planId < nextPlanId, "Plan does not exist");
-
-        SavingPlan memory plan = savingPlans[planId];
-
-        require(plan.enabled, "Plan is disabled");
-        require(amount > 0, "Amount must be greater than zero");
-
-        if (plan.minDeposit > 0) {
-            require(amount >= plan.minDeposit, "Below minimum deposit");
-        }
-
-        if (plan.maxDeposit > 0) {
-            require(amount <= plan.maxDeposit, "Above maximum deposit");
-        }
-
-        uint256 depositId = nextDepositId;
-
-        uint256 openedAt = block.timestamp;
-        uint256 maturityAt = openedAt + (plan.tenorDays * 1 days);
-
-        deposits[depositId] = Deposit({
-            principal: amount,
-            planId: planId,
-            openedAt: openedAt,
-            maturityAt: maturityAt,
-            tenorDays: plan.tenorDays,
-            aprBpsAtOpen: plan.aprBps,
-            penaltyBpsAtOpen: plan.earlyWithdrawPenaltyBps,
-            status: DepositStatus.ACTIVE
-        });
-
-        nextDepositId++;
-
-        token.safeTransferFrom(msg.sender, address(this), amount);
-
-        _safeMint(msg.sender, depositId);
-
-        emit DepositOpened(depositId, msg.sender, planId, amount, maturityAt);
-
-        return depositId;
     }
 
     function updatePlan(uint256 planId, uint256 newAprBps) external onlyOwner {
@@ -285,6 +177,236 @@ contract SavingCore is Ownable, ERC721 {
         emit PlanStatusChanged(planId, false);
     }
 
+    // ==========================================
+    // DEPOSIT
+    // ==========================================
+
+    function openDeposit(
+        uint256 planId,
+        uint256 amount
+    ) external returns (uint256) {
+        require(planId < nextPlanId, "Plan does not exist");
+
+        SavingPlan memory plan = savingPlans[planId];
+
+        require(plan.enabled, "Plan is disabled");
+
+        require(amount > 0, "Amount must be greater than zero");
+
+        if (plan.minDeposit > 0) {
+            require(amount >= plan.minDeposit, "Below minimum deposit");
+        }
+
+        if (plan.maxDeposit > 0) {
+            require(amount <= plan.maxDeposit, "Above maximum deposit");
+        }
+
+        uint256 depositId = nextDepositId;
+
+        uint256 openedAt = block.timestamp;
+
+        uint256 maturityAt = openedAt + (plan.tenorDays * 1 days);
+
+        deposits[depositId] = Deposit({
+            principal: amount,
+            planId: planId,
+            openedAt: openedAt,
+            maturityAt: maturityAt,
+            tenorDays: plan.tenorDays,
+            aprBpsAtOpen: plan.aprBps,
+            penaltyBpsAtOpen: plan.earlyWithdrawPenaltyBps,
+            status: DepositStatus.ACTIVE,
+            // Auto-renew is disabled by default
+            autoRenew: false
+        });
+
+        nextDepositId++;
+
+        token.safeTransferFrom(msg.sender, address(this), amount);
+
+        _safeMint(msg.sender, depositId);
+
+        emit DepositOpened(depositId, msg.sender, planId, amount, maturityAt);
+
+        return depositId;
+    }
+
+    // ==========================================
+    // AUTO RENEW CONFIGURATION
+    // ==========================================
+
+    function setAutoRenew(uint256 depositId, bool enabled) external {
+        require(depositId < nextDepositId, "Deposit does not exist");
+
+        Deposit storage deposit = deposits[depositId];
+
+        require(
+            deposit.status == DepositStatus.ACTIVE,
+            "Deposit is not active"
+        );
+
+        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
+
+        require(
+            block.timestamp < deposit.maturityAt + GRACE_PERIOD,
+            "Auto-renew configuration period ended"
+        );
+
+        deposit.autoRenew = enabled;
+
+        emit AutoRenewUpdated(depositId, enabled);
+    }
+
+    function processAutoRenew(uint256 depositId) external {
+        require(depositId < nextDepositId, "Deposit does not exist");
+
+        Deposit storage deposit = deposits[depositId];
+
+        require(
+            deposit.status == DepositStatus.ACTIVE,
+            "Deposit is not active"
+        );
+
+        require(deposit.autoRenew, "Auto-renew is disabled");
+
+        // Must wait until the 2-day grace period has ended
+        require(
+            block.timestamp >= deposit.maturityAt + GRACE_PERIOD,
+            "Grace period not ended"
+        );
+
+        // Must process before the renewal window expires
+        require(
+            block.timestamp <
+                deposit.maturityAt +
+                    GRACE_PERIOD +
+                    (deposit.tenorDays * 1 days),
+            "Renewal window missed"
+        );
+
+        uint256 oldMaturityAt = deposit.maturityAt;
+
+        uint256 interest = calculateInterest(
+            deposit.principal,
+            deposit.aprBpsAtOpen,
+            deposit.tenorDays
+        );
+
+        uint256 newPrincipal = deposit.principal + interest;
+
+        if (interest > 0) {
+            vaultManager.payoutInterest(address(this), interest);
+        }
+
+        deposit.principal = newPrincipal;
+
+        deposit.openedAt = oldMaturityAt;
+
+        deposit.maturityAt = oldMaturityAt + (deposit.tenorDays * 1 days);
+
+        emit DepositRenewed(
+            depositId,
+            oldMaturityAt,
+            deposit.maturityAt,
+            interest,
+            newPrincipal
+        );
+    }
+
+    // ==========================================
+    // MATURE WITHDRAWAL
+    // ==========================================
+
+    function withdrawAtMaturity(uint256 depositId) external {
+        require(depositId < nextDepositId, "Deposit does not exist");
+
+        Deposit storage deposit = deposits[depositId];
+
+        require(
+            deposit.status == DepositStatus.ACTIVE,
+            "Deposit is not active"
+        );
+
+        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
+
+        require(
+            block.timestamp >= deposit.maturityAt,
+            "Deposit has not matured"
+        );
+
+        uint256 interest = calculateInterest(
+            deposit.principal,
+            deposit.aprBpsAtOpen,
+            deposit.tenorDays
+        );
+
+        uint256 principal = deposit.principal;
+
+        // Effects before interactions
+        deposit.status = DepositStatus.CLOSED;
+
+        // Principal comes from SavingCore
+        token.safeTransfer(msg.sender, principal);
+
+        // Interest comes from VaultManager
+        if (interest > 0) {
+            vaultManager.payoutInterest(msg.sender, interest);
+        }
+
+        emit DepositWithdrawn(depositId, msg.sender, principal, interest);
+    }
+
+    // ==========================================
+    // EARLY WITHDRAWAL
+    // ==========================================
+
+    function withdrawEarly(uint256 depositId) external {
+        require(depositId < nextDepositId, "Deposit does not exist");
+
+        Deposit storage deposit = deposits[depositId];
+
+        require(
+            deposit.status == DepositStatus.ACTIVE,
+            "Deposit is not active"
+        );
+
+        require(ownerOf(depositId) == msg.sender, "Not deposit owner");
+
+        require(
+            block.timestamp < deposit.maturityAt,
+            "Deposit already matured"
+        );
+
+        uint256 principal = deposit.principal;
+
+        uint256 penalty = calculatePenalty(principal, deposit.penaltyBpsAtOpen);
+
+        uint256 amountReceived = principal - penalty;
+
+        // Effects before interactions
+        deposit.status = DepositStatus.CLOSED;
+
+        // Principal minus penalty
+        token.safeTransfer(msg.sender, amountReceived);
+
+        // Penalty goes to fee receiver
+        if (penalty > 0) {
+            token.safeTransfer(vaultManager.feeReceiver(), penalty);
+        }
+
+        emit DepositWithdrawnEarly(
+            depositId,
+            msg.sender,
+            principal,
+            penalty,
+            amountReceived
+        );
+    }
+
+    // ==========================================
+    // GETTERS
+    // ==========================================
+
     function getPlan(uint256 planId) external view returns (SavingPlan memory) {
         require(planId < nextPlanId, "Plan does not exist");
 
@@ -298,6 +420,11 @@ contract SavingCore is Ownable, ERC721 {
 
         return deposits[depositId];
     }
+
+    // ==========================================
+    // CALCULATIONS
+    // ==========================================
+
     function calculateInterest(
         uint256 principal,
         uint256 aprBps,

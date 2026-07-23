@@ -1350,6 +1350,1253 @@ describe("SavingCore", function () {
           deposit.status
         ).to.equal(1);
       });
+      describe("Auto Renew Configuration", function () {
+
+        it("should allow NFT owner to enable auto-renew", async function () {
+          const depositAmount =
+            ethers.parseUnits("1000", 6);
+
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          await mockUSDC.mint(
+            user.address,
+            depositAmount
+          );
+
+          await mockUSDC
+            .connect(user)
+            .approve(
+              await savingCore.getAddress(),
+              depositAmount
+            );
+
+          await savingCore
+            .connect(user)
+            .openDeposit(
+              0,
+              depositAmount
+            );
+
+          // Default must be false
+          let deposit =
+            await savingCore.getDeposit(0);
+
+          expect(
+            deposit.autoRenew
+          ).to.equal(false);
+
+          // Enable auto-renew
+          await savingCore
+            .connect(user)
+            .setAutoRenew(
+              0,
+              true
+            );
+
+          deposit =
+            await savingCore.getDeposit(0);
+
+          expect(
+            deposit.autoRenew
+          ).to.equal(true);
+        });
+        it("should reject auto-renew when the renewal window has been missed", async function () {
+          const depositAmount =
+            ethers.parseUnits("1000", 6);
+
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          await mockUSDC.mint(
+            user.address,
+            depositAmount
+          );
+
+          await mockUSDC
+            .connect(user)
+            .approve(
+              await savingCore.getAddress(),
+              depositAmount
+            );
+
+          await savingCore
+            .connect(user)
+            .openDeposit(
+              0,
+              depositAmount
+            );
+
+          await savingCore
+            .connect(user)
+            .setAutoRenew(
+              0,
+              true
+            );
+
+          const deposit =
+            await savingCore.getDeposit(0);
+
+          const gracePeriod =
+            2 * 24 * 60 * 60;
+
+          const tenor =
+            TENOR_DAYS * 24 * 60 * 60;
+
+          // Move exactly to the end of the allowed renewal window
+          await ethers.provider.send(
+            "evm_setNextBlockTimestamp",
+            [
+              Number(deposit.maturityAt) +
+              gracePeriod +
+              tenor
+            ]
+          );
+
+          await ethers.provider.send(
+            "evm_mine",
+            []
+          );
+
+          await expect(
+            savingCore.processAutoRenew(0)
+          ).to.be.revertedWith(
+            "Renewal window missed"
+          );
+        });
+
+        it("should allow NFT owner to disable auto-renew", async function () {
+          const depositAmount =
+            ethers.parseUnits("1000", 6);
+
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          await mockUSDC.mint(
+            user.address,
+            depositAmount
+          );
+
+          await mockUSDC
+            .connect(user)
+            .approve(
+              await savingCore.getAddress(),
+              depositAmount
+            );
+
+          await savingCore
+            .connect(user)
+            .openDeposit(
+              0,
+              depositAmount
+            );
+
+          // Enable first
+          await savingCore
+            .connect(user)
+            .setAutoRenew(
+              0,
+              true
+            );
+
+          // Then disable
+          await savingCore
+            .connect(user)
+            .setAutoRenew(
+              0,
+              false
+            );
+
+          const deposit =
+            await savingCore.getDeposit(0);
+
+          expect(
+            deposit.autoRenew
+          ).to.equal(false);
+        });
+
+      });
+      it("should reject auto-renew update from a non-NFT owner", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // User opens Deposit #0
+        // => NFT #0 belongs to user
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Owner/admin does not own NFT #0
+        await expect(
+          savingCore
+            .connect(owner)
+            .setAutoRenew(
+              0,
+              true
+            )
+        ).to.be.revertedWith(
+          "Not deposit owner"
+        );
+      });
+      it("should auto-renew after the grace period and compound interest", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        const vaultFundAmount =
+          ethers.parseUnits("100", 6);
+
+        // Create saving plan
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give user 1,000 USDC
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open Deposit #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Enable auto-renew
+        await savingCore
+          .connect(user)
+          .setAutoRenew(
+            0,
+            true
+          );
+
+        // Fund VaultManager so it can provide interest
+        await mockUSDC.mint(
+          owner.address,
+          vaultFundAmount
+        );
+
+        await mockUSDC.approve(
+          await vaultManager.getAddress(),
+          vaultFundAmount
+        );
+
+        await vaultManager.fundVault(
+          vaultFundAmount
+        );
+
+        const depositBefore =
+          await savingCore.getDeposit(0);
+
+        const expectedInterest =
+          await savingCore.calculateInterest(
+            depositBefore.principal,
+            depositBefore.aprBpsAtOpen,
+            depositBefore.tenorDays
+          );
+
+        // Move time to:
+        // maturity + 2-day grace period
+        await ethers.provider.send(
+          "evm_setNextBlockTimestamp",
+          [
+            Number(depositBefore.maturityAt) +
+            (2 * 24 * 60 * 60)
+          ]
+        );
+
+        await ethers.provider.send(
+          "evm_mine",
+          []
+        );
+
+        // Process auto-renew
+        await savingCore.processAutoRenew(0);
+
+        const depositAfter =
+          await savingCore.getDeposit(0);
+
+        // Interest is compounded into principal
+        expect(
+          depositAfter.principal
+        ).to.equal(
+          depositAmount + expectedInterest
+        );
+
+        // New maturity = old maturity + 90 days
+        expect(
+          depositAfter.maturityAt
+        ).to.equal(
+          depositBefore.maturityAt +
+          BigInt(TENOR_DAYS * 24 * 60 * 60)
+        );
+
+        // Deposit remains active
+        expect(
+          depositAfter.status
+        ).to.equal(0);
+
+        // Auto-renew remains enabled
+        expect(
+          depositAfter.autoRenew
+        ).to.equal(true);
+
+        // NFT ownership remains unchanged
+        expect(
+          await savingCore.ownerOf(0)
+        ).to.equal(
+          user.address
+        );
+
+        // SavingCore must actually hold
+        // principal + compounded interest
+        expect(
+          await mockUSDC.balanceOf(
+            await savingCore.getAddress()
+          )
+        ).to.equal(
+          depositAmount + expectedInterest
+        );
+      });
+      it("should reject auto-renew before the grace period ends", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open Deposit #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Enable auto-renew
+        await savingCore
+          .connect(user)
+          .setAutoRenew(
+            0,
+            true
+          );
+
+        const deposit =
+          await savingCore.getDeposit(0);
+
+        // Move to maturity + 1 day
+        // Grace period is 2 days, so this is still too early
+        await ethers.provider.send(
+          "evm_setNextBlockTimestamp",
+          [
+            Number(deposit.maturityAt) +
+            (1 * 24 * 60 * 60)
+          ]
+        );
+
+        await ethers.provider.send(
+          "evm_mine",
+          []
+        );
+
+        await expect(
+          savingCore.processAutoRenew(0)
+        ).to.be.revertedWith(
+          "Grace period not ended"
+        );
+      });
+      it("should allow withdrawal during the grace period even when auto-renew is enabled", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        const vaultFundAmount =
+          ethers.parseUnits("100", 6);
+
+        // Create plan
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give user funds
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open Deposit #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Enable auto-renew
+        await savingCore
+          .connect(user)
+          .setAutoRenew(
+            0,
+            true
+          );
+
+        // Fund VaultManager for interest payment
+        await mockUSDC.mint(
+          owner.address,
+          vaultFundAmount
+        );
+
+        await mockUSDC.approve(
+          await vaultManager.getAddress(),
+          vaultFundAmount
+        );
+
+        await vaultManager.fundVault(
+          vaultFundAmount
+        );
+
+        const depositBefore =
+          await savingCore.getDeposit(0);
+
+        const expectedInterest =
+          await savingCore.calculateInterest(
+            depositBefore.principal,
+            depositBefore.aprBpsAtOpen,
+            depositBefore.tenorDays
+          );
+
+        // Move to maturity + 1 day
+        // This is INSIDE the 2-day grace period
+        await ethers.provider.send(
+          "evm_setNextBlockTimestamp",
+          [
+            Number(depositBefore.maturityAt) +
+            (1 * 24 * 60 * 60)
+          ]
+        );
+
+        await ethers.provider.send(
+          "evm_mine",
+          []
+        );
+
+        // User chooses to withdraw instead of renewing
+        await savingCore
+          .connect(user)
+          .withdrawAtMaturity(0);
+
+        // User receives principal + interest
+        expect(
+          await mockUSDC.balanceOf(
+            user.address
+          )
+        ).to.equal(
+          depositAmount + expectedInterest
+        );
+
+        // Deposit is CLOSED
+        const depositAfter =
+          await savingCore.getDeposit(0);
+
+        expect(
+          depositAfter.status
+        ).to.equal(1);
+      });
+      it("should not allow immediate withdrawal after auto-renew creates a new term", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        const vaultFundAmount =
+          ethers.parseUnits("100", 6);
+
+        // Create plan
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        // Give user funds
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open Deposit #0
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Enable auto-renew
+        await savingCore
+          .connect(user)
+          .setAutoRenew(
+            0,
+            true
+          );
+
+        // Fund VaultManager for interest
+        await mockUSDC.mint(
+          owner.address,
+          vaultFundAmount
+        );
+
+        await mockUSDC.approve(
+          await vaultManager.getAddress(),
+          vaultFundAmount
+        );
+
+        await vaultManager.fundVault(
+          vaultFundAmount
+        );
+
+        const depositBefore =
+          await savingCore.getDeposit(0);
+
+        // Move to old maturity + 2-day grace period
+        await ethers.provider.send(
+          "evm_setNextBlockTimestamp",
+          [
+            Number(depositBefore.maturityAt) +
+            (2 * 24 * 60 * 60)
+          ]
+        );
+
+        await ethers.provider.send(
+          "evm_mine",
+          []
+        );
+
+        // Renew into a new term
+        await savingCore.processAutoRenew(0);
+
+        const depositAfter =
+          await savingCore.getDeposit(0);
+
+        // New maturity must be later than current blockchain time
+        const latestBlock =
+          await ethers.provider.getBlock(
+            "latest"
+          );
+
+        expect(
+          depositAfter.maturityAt
+        ).to.be.greaterThan(
+          latestBlock.timestamp
+        );
+
+        // Cannot immediately perform mature withdrawal
+        await expect(
+          savingCore
+            .connect(user)
+            .withdrawAtMaturity(0)
+        ).to.be.revertedWith(
+          "Deposit has not matured"
+        );
+      });
+      it("should reject auto-renew processing when auto-renew is disabled", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        // Open Deposit #0
+        // autoRenew is false by default
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        const deposit =
+          await savingCore.getDeposit(0);
+
+        expect(
+          deposit.autoRenew
+        ).to.equal(false);
+
+        // Move past maturity + grace period
+        await ethers.provider.send(
+          "evm_setNextBlockTimestamp",
+          [
+            Number(deposit.maturityAt) +
+            (2 * 24 * 60 * 60)
+          ]
+        );
+
+        await ethers.provider.send(
+          "evm_mine",
+          []
+        );
+
+        // Must not renew because user never enabled it
+        await expect(
+          savingCore.processAutoRenew(0)
+        ).to.be.revertedWith(
+          "Auto-renew is disabled"
+        );
+      });
+      it("should reject changing auto-renew after the grace period ends", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        const deposit =
+          await savingCore.getDeposit(0);
+
+        // Move exactly to maturity + 2-day grace period
+        await ethers.provider.send(
+          "evm_setNextBlockTimestamp",
+          [
+            Number(deposit.maturityAt) +
+            (2 * 24 * 60 * 60)
+          ]
+        );
+
+        await ethers.provider.send(
+          "evm_mine",
+          []
+        );
+
+        await expect(
+          savingCore
+            .connect(user)
+            .setAutoRenew(
+              0,
+              true
+            )
+        ).to.be.revertedWith(
+          "Auto-renew configuration period ended"
+        );
+      });
+    });
+    describe("Constructor Validation", function () {
+
+      it("should reject zero token address", async function () {
+        const SavingCore =
+          await ethers.getContractFactory(
+            "SavingCore"
+          );
+
+        await expect(
+          SavingCore.deploy(
+            ethers.ZeroAddress,
+            await vaultManager.getAddress()
+          )
+        ).to.be.revertedWith(
+          "Invalid token address"
+        );
+      });
+
+      it("should reject zero VaultManager address", async function () {
+        const SavingCore =
+          await ethers.getContractFactory(
+            "SavingCore"
+          );
+
+        await expect(
+          SavingCore.deploy(
+            await mockUSDC.getAddress(),
+            ethers.ZeroAddress
+          )
+        ).to.be.revertedWith(
+          "Invalid VaultManager address"
+        );
+      });
+
+    });
+    describe("Plan Management Edge Cases", function () {
+
+      it("should reject updating a plan that does not exist", async function () {
+        await expect(
+          savingCore.updatePlan(
+            999,
+            300
+          )
+        ).to.be.revertedWith(
+          "Plan does not exist"
+        );
+      });
+
+      it("should reject updating plan APR above 100 percent", async function () {
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        await expect(
+          savingCore.updatePlan(
+            0,
+            10001
+          )
+        ).to.be.revertedWith(
+          "Invalid APR"
+        );
+      });
+
+      it("should reject enabling a plan that does not exist", async function () {
+        await expect(
+          savingCore.enablePlan(
+            999
+          )
+        ).to.be.revertedWith(
+          "Plan does not exist"
+        );
+      });
+
+      it("should reject disabling a plan that does not exist", async function () {
+        await expect(
+          savingCore.disablePlan(
+            999
+          )
+        ).to.be.revertedWith(
+          "Plan does not exist"
+        );
+      });
+
+    });
+  }); describe("Auto Renew Edge Cases", function () {
+
+    it("should reject setting auto-renew for a deposit that does not exist", async function () {
+      await expect(
+        savingCore.setAutoRenew(
+          999,
+          true
+        )
+      ).to.be.revertedWith(
+        "Deposit does not exist"
+      );
+    });
+
+
+    it("should reject processing auto-renew for a deposit that does not exist", async function () {
+      await expect(
+        savingCore.processAutoRenew(
+          999
+        )
+      ).to.be.revertedWith(
+        "Deposit does not exist"
+      );
+    });
+
+
+    it("should reject setting auto-renew on a closed deposit", async function () {
+      const depositAmount =
+        ethers.parseUnits("1000", 6);
+
+      // Create plan
+      await savingCore.createPlan(
+        TENOR_DAYS,
+        APR_BPS,
+        MIN_DEPOSIT,
+        MAX_DEPOSIT,
+        PENALTY_BPS
+      );
+
+      // Give user tokens
+      await mockUSDC.mint(
+        user.address,
+        depositAmount
+      );
+
+      await mockUSDC
+        .connect(user)
+        .approve(
+          await savingCore.getAddress(),
+          depositAmount
+        );
+
+      // Open Deposit #0
+      await savingCore
+        .connect(user)
+        .openDeposit(
+          0,
+          depositAmount
+        );
+
+      // Close it using early withdrawal
+      await savingCore
+        .connect(user)
+        .withdrawEarly(0);
+
+      // Deposit is now CLOSED
+      await expect(
+        savingCore
+          .connect(user)
+          .setAutoRenew(
+            0,
+            true
+          )
+      ).to.be.revertedWith(
+        "Deposit is not active"
+      );
+    });
+    describe("Deposit Closed State Edge Cases", function () {
+
+      it("should reject auto-renew processing for a closed deposit", async function () {
+        const depositAmount =
+          ethers.parseUnits("1000", 6);
+
+        await savingCore.createPlan(
+          TENOR_DAYS,
+          APR_BPS,
+          MIN_DEPOSIT,
+          MAX_DEPOSIT,
+          PENALTY_BPS
+        );
+
+        await mockUSDC.mint(
+          user.address,
+          depositAmount
+        );
+
+        await mockUSDC
+          .connect(user)
+          .approve(
+            await savingCore.getAddress(),
+            depositAmount
+          );
+
+        await savingCore
+          .connect(user)
+          .openDeposit(
+            0,
+            depositAmount
+          );
+
+        // Enable before closing
+        await savingCore
+          .connect(user)
+          .setAutoRenew(
+            0,
+            true
+          );
+
+        // Close deposit
+        await savingCore
+          .connect(user)
+          .withdrawEarly(0);
+
+        // Cannot process renewal anymore
+        await expect(
+          savingCore.processAutoRenew(0)
+        ).to.be.revertedWith(
+          "Deposit is not active"
+        );
+      });
+
+
+      it("should reject mature withdrawal for a deposit that does not exist", async function () {
+        await expect(
+          savingCore
+            .connect(user)
+            .withdrawAtMaturity(999)
+        ).to.be.revertedWith(
+          "Deposit does not exist"
+        );
+      });
+
+
+      it("should reject early withdrawal for a deposit that does not exist", async function () {
+        await expect(
+          savingCore
+            .connect(user)
+            .withdrawEarly(999)
+        ).to.be.revertedWith(
+          "Deposit does not exist"
+        );
+      });
+
+    });
+
+    describe("SavingCore Final Branch Coverage", function () {
+
+      it("should reject getting a deposit that does not exist", async function () {
+        await expect(
+          savingCore.getDeposit(999)
+        ).to.be.revertedWith(
+          "Deposit does not exist"
+        );
+      });
+      describe("SavingCore Remaining Branch Coverage", function () {
+
+        // =========================================================
+        // 1. createPlan(): cover minDeposit == 0 with maxDeposit > 0
+        // =========================================================
+        it("should allow zero minimum with non-zero maximum deposit", async function () {
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            0,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          const plan = await savingCore.getPlan(0);
+
+          expect(plan.minDeposit).to.equal(0);
+          expect(plan.maxDeposit).to.equal(MAX_DEPOSIT);
+        });
+
+
+        // =========================================================
+        // 2. onlyOwner branch: updatePlan()
+        // =========================================================
+        it("should reject updatePlan from non-owner", async function () {
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          await expect(
+            savingCore
+              .connect(user)
+              .updatePlan(0, 300)
+          ).to.be.reverted;
+        });
+
+
+        // =========================================================
+        // 3. onlyOwner branch: enablePlan()
+        // =========================================================
+        it("should reject enablePlan from non-owner", async function () {
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          await savingCore.disablePlan(0);
+
+          await expect(
+            savingCore
+              .connect(user)
+              .enablePlan(0)
+          ).to.be.reverted;
+        });
+
+
+        // =========================================================
+        // 4. onlyOwner branch: disablePlan()
+        // =========================================================
+        it("should reject disablePlan from non-owner", async function () {
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          await expect(
+            savingCore
+              .connect(user)
+              .disablePlan(0)
+          ).to.be.reverted;
+        });
+
+
+        // =========================================================
+        // 5. openDeposit():
+        //    cover minDeposit == 0 AND maxDeposit == 0
+        // =========================================================
+        it("should open deposit when both min and max limits are zero", async function () {
+          const amount =
+            ethers.parseUnits("1000", 6);
+
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            0,
+            0,
+            PENALTY_BPS
+          );
+
+          await mockUSDC.mint(
+            user.address,
+            amount
+          );
+
+          await mockUSDC
+            .connect(user)
+            .approve(
+              await savingCore.getAddress(),
+              amount
+            );
+
+          await savingCore
+            .connect(user)
+            .openDeposit(
+              0,
+              amount
+            );
+
+          const deposit =
+            await savingCore.getDeposit(0);
+
+          expect(
+            deposit.principal
+          ).to.equal(amount);
+        });
+
+
+        // =========================================================
+        // 6. withdrawAtMaturity():
+        //    cover interest == 0
+        // =========================================================
+        it("should withdraw at maturity with zero interest", async function () {
+          const amount =
+            ethers.parseUnits("1000", 6);
+
+          // APR = 0 => interest = 0
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            0,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            PENALTY_BPS
+          );
+
+          await mockUSDC.mint(
+            user.address,
+            amount
+          );
+
+          await mockUSDC
+            .connect(user)
+            .approve(
+              await savingCore.getAddress(),
+              amount
+            );
+
+          await savingCore
+            .connect(user)
+            .openDeposit(
+              0,
+              amount
+            );
+
+          const deposit =
+            await savingCore.getDeposit(0);
+
+          await ethers.provider.send(
+            "evm_setNextBlockTimestamp",
+            [
+              Number(
+                deposit.maturityAt
+              )
+            ]
+          );
+
+          await ethers.provider.send(
+            "evm_mine",
+            []
+          );
+
+          await savingCore
+            .connect(user)
+            .withdrawAtMaturity(0);
+
+          expect(
+            await mockUSDC.balanceOf(
+              user.address
+            )
+          ).to.equal(amount);
+        });
+
+
+        // =========================================================
+        // 7. withdrawEarly():
+        //    cover penalty == 0
+        // =========================================================
+        it("should withdraw early with zero penalty", async function () {
+          const amount =
+            ethers.parseUnits("1000", 6);
+
+          // penaltyBps = 0
+          await savingCore.createPlan(
+            TENOR_DAYS,
+            APR_BPS,
+            MIN_DEPOSIT,
+            MAX_DEPOSIT,
+            0
+          );
+
+          await mockUSDC.mint(
+            user.address,
+            amount
+          );
+
+          await mockUSDC
+            .connect(user)
+            .approve(
+              await savingCore.getAddress(),
+              amount
+            );
+
+          await savingCore
+            .connect(user)
+            .openDeposit(
+              0,
+              amount
+            );
+
+          await savingCore
+            .connect(user)
+            .withdrawEarly(0);
+
+          // No penalty => user receives all principal
+          expect(
+            await mockUSDC.balanceOf(
+              user.address
+            )
+          ).to.equal(amount);
+        });
+
+      });
     });
   });
 });
