@@ -1,0 +1,695 @@
+/* =========================================================
+   BLOCKCHAIN ONLINE BANKING - MODERN FINTECH STYLING
+   ========================================================= */
+
+.app-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+  width: 100%;
+}
+
+/* ================= HEADER NAVBAR ================= */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: 28px;
+  box-shadow: var(--shadow-sm);
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-icon {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.brand-title {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-network {
+  background: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: #38bdf8;
+}
+
+.badge-role-admin {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.badge-role-user {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.account-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.wallet-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+}
+
+/* ================= BUTTONS ================= */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: none;
+  outline: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+  filter: brightness(1.08);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-purple {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+.btn-purple:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.45);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
+}
+
+.btn-outline-primary {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.btn-outline-primary:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: var(--primary);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.btn-full {
+  width: 100%;
+}
+
+/* ================= KPI STATS BAR ================= */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  margin-bottom: 28px;
+}
+
+.kpi-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.2s ease;
+}
+
+.kpi-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.kpi-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.kpi-icon-green {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.kpi-icon-cyan {
+  background: rgba(6, 182, 212, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(6, 182, 212, 0.2);
+}
+
+.kpi-icon-purple {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.kpi-icon-amber {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.kpi-info label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.kpi-info .kpi-value {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* ================= MAIN DASHBOARD GRID ================= */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================= PANELS & CARDS ================= */
+.panel-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panel-title {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-title-icon {
+  font-size: 20px;
+}
+
+/* ================= FORM ELEMENTS ================= */
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.form-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.form-input {
+  width: 100%;
+  padding: 14px 16px;
+  padding-right: 70px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 600;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.input-suffix {
+  position: absolute;
+  right: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  pointer-events: none;
+}
+
+.preset-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-preset {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-preset:hover {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+/* ================= LIVE ROI CALCULATOR BOX ================= */
+.roi-calculator {
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px dashed rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.roi-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.roi-row:last-child {
+  margin-bottom: 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.roi-label {
+  color: var(--text-muted);
+}
+
+.roi-value {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.roi-value-highlight {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 700;
+  color: #34d399;
+}
+
+/* ================= SAVING PLAN DETAILS ================= */
+.plan-spec-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.plan-spec-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+
+.plan-spec-item label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.plan-spec-item val {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* ================= MY DEPOSIT NFT CERTIFICATE CARD ================= */
+.nft-card {
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.nft-card:hover {
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.nft-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary), var(--purple));
+}
+
+.nft-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.nft-badge-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nft-id-tag {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2));
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+}
+
+.nft-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Status Badges */
+.status-pill {
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.status-pill-active {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
+}
+
+.status-pill-withdrawn {
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+}
+
+.status-pill-renewed {
+  background: rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  color: #c084fc;
+}
+
+/* Progress bar to maturity */
+.maturity-progress-box {
+  margin: 18px 0;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #06b6d4);
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+.progress-fill-matured {
+  background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+}
+
+/* Deposit Data Grid inside NFT Card */
+.nft-data-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 600px) {
+  .nft-data-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.nft-data-item {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.nft-data-item span {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.nft-data-item strong {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.nft-data-item strong.highlight-green {
+  color: #34d399;
+}
+
+/* Action bar for NFT Card */
+.nft-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.nft-actions .btn {
+  flex: 1;
+}
+
+/* Status message */
+.status-msg {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  margin-top: 14px;
+}
+
+.status-msg-info {
+  background: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: #38bdf8;
+}
+
+.status-msg-success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 50px 20px;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 14px;
+  opacity: 0.8;
+}
+
+.empty-title {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+}
