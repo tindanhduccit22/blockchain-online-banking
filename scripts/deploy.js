@@ -209,6 +209,26 @@ async function main() {
   console.log(
     "========================================"
   );
+
+  const fs = require("fs");
+  const path = require("path");
+  const contractsConfigFile = path.join(__dirname, "../frontend/src/config/contracts.js");
+  const configContent = `export const CONTRACT_ADDRESSES = {
+  mockUSDC:
+    "${tokenAddress}",
+
+  vaultManager:
+    "${vaultManagerAddress}",
+
+  savingCore:
+    "${savingCoreAddress}",
+};
+
+export const HARDHAT_CHAIN_ID = 31337;
+`;
+
+  fs.writeFileSync(contractsConfigFile, configContent);
+  console.log("\n✅ Successfully updated frontend/src/config/contracts.js with new contract addresses!");
 }
 
 main().catch((error) => {

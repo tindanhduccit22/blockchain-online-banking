@@ -474,8 +474,8 @@ export default function useSaving(account) {
         }
 
         const numAmount = Number(amount);
-        if (!amount || isNaN(numAmount) || numAmount < 10 || numAmount > 10000) {
-            setTransactionStatus("❌ Mint amount must be between 10 and 10,000 USDC.");
+        if (!amount || isNaN(numAmount) || numAmount <= 0) {
+            setTransactionStatus("❌ Please enter a valid mint amount.");
             return false;
         }
 

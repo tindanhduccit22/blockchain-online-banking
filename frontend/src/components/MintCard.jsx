@@ -20,7 +20,6 @@ export default function MintCard({
       <div className="form-group">
         <div className="form-label">
           <span>Amount to Mint</span>
-          <span>Limits: 10 - 10,000 USDC</span>
         </div>
 
         <div className="form-input-wrapper">
@@ -28,8 +27,6 @@ export default function MintCard({
             className="form-input"
             type="number"
             value={mintAmount}
-            min="10"
-            max="10000"
             onChange={(e) => setMintAmount(e.target.value)}
           />
           <span className="input-suffix">USDC</span>
@@ -39,16 +36,16 @@ export default function MintCard({
           <button
             type="button"
             className="btn-preset"
-            onClick={() => setMintAmount("100")}
+            onClick={() => setMintAmount("1000")}
           >
-            +$100
+            +$1,000
           </button>
           <button
             type="button"
             className="btn-preset"
-            onClick={() => setMintAmount("1000")}
+            onClick={() => setMintAmount("5000")}
           >
-            +$1,000
+            +$5,000
           </button>
           <button
             type="button"
