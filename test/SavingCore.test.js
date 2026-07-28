@@ -2981,5 +2981,49 @@ describe("SavingCore", function () {
       // Renew into Plan 1 with 3000 USDC (> max 2000 USDC) -> reverts
       await expect(savingCore.connect(user).renewDeposit(1, 1)).to.be.revertedWith("Above maximum deposit");
     });
+
+    it("should cover reserved interest fallback branches (lines 468, 532, 563, 621)", async function () {
+      await savingCore.createPlan(90, 200, 0, 0, 400);
+      const amount = ethers.parseUnits("500", 6);
+
+      // Open Deposit 0
+      await mockUSDC.mint(user.address, amount);
+      await mockUSDC.connect(user).approve(await savingCore.getAddress(), amount);
+      await savingCore.connect(user).openDeposit(0, amount);
+
+      // Early withdraw when totalReservedInterest < expectedInterest (Line 621)
+      await savingCore.connect(user).withdrawEarly(0);
+
+      // Open Deposit 1 & 2
+      await mockUSDC.mint(user.address, amount * 2n);
+      await mockUSDC.connect(user).approve(await savingCore.getAddress(), amount * 2n);
+      await savingCore.connect(user).openDeposit(0, amount);
+      await savingCore.connect(user).openDeposit(0, amount);
+
+      await ethers.provider.send("evm_increaseTime", [90 * 86400 + 10]);
+      await ethers.provider.send("evm_mine");
+
+      // Fund vault
+      await mockUSDC.mint(owner.address, ethers.parseUnits("100", 6));
+      await mockUSDC.approve(await vaultManager.getAddress(), ethers.parseUnits("100", 6));
+      await vaultManager.fundVault(ethers.parseUnits("100", 6));
+
+      // Renew deposit 1 when totalReservedInterest < oldExpectedInterest (Line 468)
+      await savingCore.connect(user).renewDeposit(1, 0);
+
+      // Withdraw at maturity for deposit 2 when totalReservedInterest < interest (Line 532)
+      await savingCore.connect(user).withdrawAtMaturity(2);
+
+      // Open Deposit 3
+      await mockUSDC.mint(user.address, amount);
+      await mockUSDC.connect(user).approve(await savingCore.getAddress(), amount);
+      await savingCore.connect(user).openDeposit(0, amount);
+
+      await ethers.provider.send("evm_increaseTime", [90 * 86400 + 10]);
+      await ethers.provider.send("evm_mine");
+
+      // Withdraw principal only for deposit 3 when totalReservedInterest < interest (Line 563)
+      await savingCore.connect(user).withdrawPrincipalOnlyAtMaturity(3);
+    });
   });
 });
